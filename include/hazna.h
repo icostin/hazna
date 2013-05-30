@@ -313,6 +313,7 @@ struct hzm_s
     uint32_t cix; // current insn index
     uint32_t cbx; // current iblk index
     uint32_t ctx; // current target index
+    uint32_t cpx; // current proc index
     uint_t wmx; // index in loaded|unbound module table
     hzw_t * w;
 };
@@ -385,6 +386,83 @@ HZAPI int C41_CALL hzm_create
     hzm_t * * mp
 );
 
+/* hzm_add_proc *************************************************************/
+/**
+ * Adds an empty procedure.
+ * The index of the procedure is the value of m->pv.n before the call, or
+ * m->pv.n - 1 after the call.
+ */
+HZAPI int C41_CALL hzm_add_proc
+(
+    hzm_t * m
+);
+
+/* hzm_add_iblk *************************************************************/
+/**
+ * Adds an empty instruction block.
+ * The index of the block is the value of m->bv.n before the call, or
+ * m->bv.n - 1 after the call.
+ */
+HZAPI int C41_CALL hzm_add_iblk
+(
+    hzm_t * m
+);
+
+/* hzm_add_target ***********************************************************/
+/**
+ * Adds a block target.
+ * The index of the block is the value of m->tv.n before the call, or
+ * m->tv.n - 1 after the call.
+ */
+HZAPI int C41_CALL hzm_add_target
+(
+    hzm_t * m,
+    uint32_t bx
+);
+
+/* hzm_add_insn *************************************************************/
+/**
+ * Adds an instruction.
+ * The index of the instruction is the value of m->iv.n before the call, 
+ * or m->iv - 1 after the call.
+ */
+HZAPI int C41_CALL hzm_add_insn
+(
+    hzm_t * m,
+    uint16_t opcode,
+    uint16_t a,
+    uint16_t b,
+    uint16_t c
+);
+
+/* hzm_seal_iblk ************************************************************/
+/**
+ * Seals the current instruction block.
+ * This function modifies the block with index m->cbx and sets its instructions
+ * to those from index m->cix up to the last instruction (m->iv.n - 1).
+ * Same thing happens to code blocks with indexes m->cbx...(m->bv.n - 1).
+ * Then the indexes of current instructions and targets are set to the size of
+ * those vectors and the current block index is incremented.
+ * Block index 0 is a 'ghost' block that contains 1 instruction which tells
+ * the interpreter to unwind the stack on exception so ebx = 0 means there is
+ * no exception handling local in that block.
+ */
+HZAPI int C41_CALL hzm_seal_iblk
+(
+    hzm_t * m,
+    uint32_t ebx // exception block index
+);
+
+/* hzm_seal_proc ************************************************************/
+/**
+ * Seals the current procedure.
+ * This function modifies the procedure with inde m->cpx and sets 
+ */
+HZAPI int C41_CALL hzm_seal_proc
+(
+    hzm_t * m
+);
+
 /* hzm_load *****************************************************************/
 /**
  * Takes an unbound module and moves it to the loaded module list.
@@ -397,15 +475,6 @@ HZAPI int C41_CALL hzm_load
     hzm_t * m
 );
 
-/* hzm_add_insn *************************************************************/
-HZAPI int C41_CALL hzm_add_insn
-(
-    hzm_t * m,
-    uint16_t opcode,
-    uint16_t a,
-    uint16_t b,
-    uint16_t c
-);
 
 #endif /* _HAZNA_V0_H_ */
 
