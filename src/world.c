@@ -107,6 +107,14 @@ HZAPI int C41_CALL hzw_finish
             WE(w, "failed destroying task manager mutex: $Ui", smtrc);
         }
     }
+    if (w->module_mutex)
+    {
+        smtrc = c41_smt_mutex_destroy(w->module_mutex, w->smt, ma);
+        if (smtrc)
+        {
+            WE(w, "failed destroying module manager mutex: $Ui", smtrc);
+        }
+    }
 
     marc = hztt_free(&w->tt);
     if (marc)
@@ -143,17 +151,4 @@ HZAPI void C41_CALL hzw_log_init
     w->log = log;
     w->log_level = level;
 }
-
-/* hzw_load *****************************************************************/
-HZAPI int C41_CALL hzw_load
-(
-    hzw_t * w,
-    hzm_t * m
-)
-{
-    (void) w;
-    (void) m;
-    return HZF_NO_CODE;
-}
-
 

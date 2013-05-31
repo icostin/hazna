@@ -71,9 +71,18 @@ HZAPI int C41_CALL hzm_create
     m = *mp;
     m->w = w;
 
-    MLOCK(w);
-    hze = attach_unbound(m);
-    MUNLOCK(w);
+    hzpv_init(&m->pv, &w->mac.ma, 8);
+    hzbv_init(&m->bv, &w->mac.ma, 8);
+    c41_u32v_init(&m->tv, &w->mac.ma, 8);
+    hziv_init(&m->iv, &w->mac.ma, 8);
+
+    do
+    {
+        MLOCK(w);
+        hze = attach_unbound(m);
+        MUNLOCK(w);
+    }
+    while (0);
 
     if (hze)
     {
@@ -86,11 +95,6 @@ HZAPI int C41_CALL hzm_create
         }
         return hze;
     }
-
-    hzpv_init(&m->pv, &w->mac.ma, 8);
-    hzbv_init(&m->bv, &w->mac.ma, 8);
-    c41_u32v_init(&m->tv, &w->mac.ma, 8);
-    hziv_init(&m->iv, &w->mac.ma, 8);
 
     return 0;
 }

@@ -136,6 +136,8 @@ enum hzo_enum // {{{
     HZO_BRANCH_64, 
     HZO_BRANCH_128, 
 
+    HZO__UNWIND_ON_EXCEPTION,   // this opcode is only allowed in the 'ghost'
+                                // block with index 0
     HZO_CALL, // direct call
     HZO_CALL_P32, // indirect call; C32 is some opaque proc pointer
 
@@ -364,6 +366,11 @@ HZAPI int C41_CALL hzt_destroy
 );
 
 /* hzt_import ***************************************************************/
+/**
+ * Imports a module in a task.
+ * Returns:
+ *  0                   success
+ */
 HZAPI int C41_CALL hzt_import
 (
     hzt_t * t,
