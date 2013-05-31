@@ -432,6 +432,9 @@ HZAPI int C41_CALL hzm_add_target
  * Adds an instruction.
  * The index of the instruction is the value of m->iv.n before the call, 
  * or m->iv - 1 after the call.
+ * Returns:
+ *  0               success
+ *  HZE_ALLOC       no mem
  */
 HZAPI int C41_CALL hzm_add_insn
 (

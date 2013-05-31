@@ -113,3 +113,86 @@ HZAPI int C41_CALL hzm_load
     return hze;
 }
 
+/* hzm_add_insn *************************************************************/
+HZAPI int C41_CALL hzm_add_insn
+(
+    hzm_t * m,
+    uint16_t opcode,
+    uint16_t a,
+    uint16_t b,
+    uint16_t c
+)
+{
+    hzw_t * w = m->w;
+    hzinsn_t * insn;
+    insn = hziv_append(&m->iv, 1);
+    if (!insn) 
+    {
+        WE(w, "failed appending to insn vector (ma-error $i)", m->iv.ma_rc);
+        return HZE_ALLOC;
+    }
+    insn->opcode = opcode;
+    insn->a = a;
+    insn->b = b;
+    insn->c = c;
+    return 0;
+}
+
+/* hzm_add_iblk *************************************************************/
+HZAPI int C41_CALL hzm_add_iblk
+(
+    hzm_t * m
+)
+{
+    hzw_t * w = m->w;
+    hziblk_t * b;
+    b = hzbv_append(&m->bv, 1);
+    if (!b)
+    {
+        WE(w, "failed appending to insn-block vector (ma error $i)",
+           m->bv.ma_rc);
+        return HZE_ALLOC;
+    }
+    C41_VAR_ZERO(*b);
+    return 0;
+}
+
+/* hzm_add_target ***********************************************************/
+HZAPI int C41_CALL hzm_add_target
+(
+    hzm_t * m,
+    uint32_t bx
+)
+{
+    hzw_t * w = m->w;
+    uint32_t * t;
+    t = c41_u32v_append(&m->tv, 1);
+    if (!t)
+    {
+        WE(w, "failed appending to target vector (ma error $i)",
+           m->tv.ma_rc);
+        return HZE_ALLOC;
+    }
+    *t = bx;
+    return 0;
+}
+
+/* hzm_add_proc *************************************************************/
+HZAPI int C41_CALL hzm_add_proc
+(
+    hzm_t * m
+)
+{
+    hzw_t * w = m->w;
+    hzproc_t * p;
+    p = hzpv_append(&m->pv, 1);
+    if (!p)
+    {
+        WE(w, "failed appending to proc vector (ma error $i)",
+           m->pv.ma_rc);
+        return HZE_ALLOC;
+    }
+    C41_VAR_ZERO(*p);
+    return 0;
+}
+
