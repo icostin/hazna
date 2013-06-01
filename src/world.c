@@ -72,9 +72,6 @@ HZAPI int C41_CALL hzw_init
         /* init loaded module table */
         hzmt_init(&w->lmt, ma, 6);
 
-        /* init unbound module table */
-        hzmt_init(&w->umt, ma, 6);
-
         /* all done! */
         rc = 0;
     }
@@ -92,12 +89,20 @@ HZAPI int C41_CALL hzw_finish
     hzw_t * w
 )
 {
+    int hze;
     uint_t marc;
     uint_t smtrc;
     uint_t esmrc;
     c41_ma_t * ma = &w->mac.ma;
+    uint_t i;
 
     WD(w, "finishing...");
+
+    if (w->umn)
+    {
+        WF(w, "BUG: unbound modules ($i) still exist at world's end", w->umn);
+        return HZF_BUG;
+    }
 
     if (w->task_mutex)
     {
@@ -114,6 +119,19 @@ HZAPI int C41_CALL hzw_finish
         {
             WE(w, "failed destroying module manager mutex: $Ui", smtrc);
         }
+    }
+
+    for (i = 0; i < w->lmt.n; ++i)
+    {
+        hze = free_module(w->lmt.a[i]);
+        if (hz_is_fatal(hze)) return hze;
+    }
+
+    marc = hzmt_free(&w->lmt);
+    if (marc)
+    {
+        WE(w, "hzmt_free failed: $i", marc);
+        return HZF_FREE;
     }
 
     marc = hztt_free(&w->tt);

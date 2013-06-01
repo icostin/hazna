@@ -73,6 +73,7 @@ static int C41_CALL task_destroy
     {
         WD(w, "destroyed task t$Ui from last slot $Ui", tid, i);
     }
+    WD(w, "---");
 
     return 0;
 }
@@ -98,9 +99,11 @@ HZAPI int C41_CALL hzt_destroy
 )
 {
     int hzrc;
-    TLOCK(t->w);
+    hzw_t * w = t->w;
+    TLOCK(w);
     hzrc = task_destroy(t);
-    TUNLOCK(t->w);
+    WD(w, "task destroy: $i", hzrc);
+    TUNLOCK(w);
     return hzrc;
 }
 

@@ -1,32 +1,13 @@
 #include "libpriv.h"
 
-/* attach_unbound ***********************************************************/
-static int attach_unbound
+static int load_module
 (
     hzm_t * m
 )
 {
     hzw_t * w = m->w;
     ssize_t x;
-    x = hzmt_append_item(&w->umt, m);
-    if (x < 0)
-    {
-        w->ma_ec = -x;
-        WE(w, "failed appending unbound module (error $i)", -x);
-        return HZE_ALLOC;
-    }
-    m->wmx = x;
-    return 0;
-}
 
-/* unbound_to_loaded ********************************************************/
-static int unbound_to_loaded
-(
-    hzm_t * m
-)
-{
-    hzw_t * w = m->w;
-    ssize_t x;
     x = hzmt_append_item(&w->lmt, m);
     if (x < 0)
     {
@@ -35,16 +16,9 @@ static int unbound_to_loaded
         return HZE_ALLOC;
     }
     /* decrement number of unbound modules */
-    w->umt.n -= 1;
-    /* it the module moved to loaded is not the last, then move the last
-     * module at its index */
-    if (m->wmx < w->umt.n)
-    {
-        hzm_t * o = w->umt.a[w->umt.n];
-        w->umt.a[m->wmx] = o;
-        o->wmx = m->wmx;
-    }
+    w->umn--;
 
+    /* write the module table index into the module */
     m->wmx = x;
 
     return 0;
@@ -70,6 +44,8 @@ HZAPI int C41_CALL hzm_create
 
     m = *mp;
     m->w = w;
+    m->wmx = -1;
+    m->mid = w->mid_seed++;
 
     hzpv_init(&m->pv, &w->mac.ma, 8);
     hzbv_init(&m->bv, &w->mac.ma, 8);
@@ -78,8 +54,15 @@ HZAPI int C41_CALL hzm_create
 
     do
     {
+        hze = hzm_add_insn(m, HZO__UNWIND_ON_EXCEPTION, 0, 0, 0);
+        if (hze) break;
+        hze = hzm_add_iblk(m);
+        if (hze) break;
+        hze = hzm_add_proc(m);
+        if (hze) break;
+
         MLOCK(w);
-        hze = attach_unbound(m);
+        w->umn++;
         MUNLOCK(w);
     }
     while (0);
@@ -99,6 +82,71 @@ HZAPI int C41_CALL hzm_create
     return 0;
 }
 
+/* free_module **************************************************************/
+int C41_CALL free_module
+(
+    hzm_t * m
+)
+{
+    hzw_t * w = m->w;
+    int marc;
+    int x;
+
+    WD(w, "freeing module m$Ui...", m->mid);
+    if (m->rn)
+    {
+        WF(w, "BUG: free_module(m$Ui) called while referenced ($Ui)",
+           m->mid, m->rn);
+        return HZF_BUG;
+    }
+
+    if (m->wmx < 0)
+    {
+        // unbound module
+        w->umn--;
+    }
+    else
+    {
+        // loaded module with 0 refs
+        x = (w->lmt.n -= 1);
+        if (m->wmx < x)
+        {
+            hzm_t * o = w->lmt.a[x];
+            o->wmx = m->wmx;
+            w->lmt.a[m->wmx] = o;
+            WD(w, "relocated m$Ui from slot $Ui to slot $Ui",
+               o->mid, x, m->wmx);
+        }
+    }
+
+    hzpv_free(&m->pv);
+    hzbv_free(&m->bv);
+    c41_u32v_free(&m->tv);
+    hziv_free(&m->iv);
+    marc = C41_VAR_FREE1(&w->mac.ma, m);
+    if (marc)
+    {
+        WF(w, "fault freeing module (ma error $i)", marc);
+        return HZF_FREE;
+    }
+    return 0;
+}
+
+/* hzm_destroy **************************************************************/
+HZAPI int C41_CALL hzm_destroy
+(
+    hzm_t * m
+)
+{
+    hzw_t * w = m->w;
+    int hze;
+
+    MLOCK(w);
+    hze = free_module(m);
+    MUNLOCK(w);
+    return hze;
+}
+
 /* hzm_load *****************************************************************/
 HZAPI int C41_CALL hzm_load
 (
@@ -108,7 +156,7 @@ HZAPI int C41_CALL hzm_load
     hzw_t * w = m->w;
     int hze;
     MLOCK(w);
-    hze = unbound_to_loaded(m);
+    hze = load_module(m);
     MUNLOCK(w);
     return hze;
 }
@@ -126,7 +174,7 @@ HZAPI int C41_CALL hzm_add_insn
     hzw_t * w = m->w;
     hzinsn_t * insn;
     insn = hziv_append(&m->iv, 1);
-    if (!insn) 
+    if (!insn)
     {
         WE(w, "failed appending to insn vector (ma-error $i)", m->iv.ma_rc);
         return HZE_ALLOC;

@@ -56,5 +56,10 @@ C41_VECTOR_FNS(hzpv_t, hzproc_t, hzpv);
     WF(_w, "failed unlocking module manager mutex ($i)", smtrc); \
     return HZF_MODULE_SYNC; } while (0)
 
+int C41_CALL free_module
+(
+    hzm_t * m
+);
+
 #endif /* _HAZNA_V0_ENGINE_H_ */
 

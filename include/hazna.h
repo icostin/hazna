@@ -27,7 +27,7 @@ enum hze_enum
     HZF_FREE, // freeing memory should not fail if correct args are passed and
     // there is no heap corruption; otherwise it can fail
     HZF_REF,
-    HZF_LIMIT, // separator for fatal errors and recoverable errors
+    HZF__LIMIT, // separator for fatal errors and recoverable errors
     HZE_ALLOC,
     HZE_LEAK,
     HZE_PM_FINISH,
@@ -266,13 +266,14 @@ struct hzw_s
 {
     hztt_t tt; // task table
     hzmt_t lmt; // loaded module table
-    hzmt_t umt; // unbound module table - these are not loaded into any task
     c41_esm_t pm; // page manager
     c41_smt_t * smt; // multithreading interface
     c41_smt_mutex_t * task_mutex; // task manager mutex
     c41_smt_mutex_t * module_mutex; // module manager mutex
 
     uint_t tid_seed;
+    uint_t mid_seed;
+    uint_t umn; // number of unbound modules (modules created but not loaded)
 
     c41_io_t * log;
     uint_t log_level;
@@ -311,12 +312,13 @@ struct hzm_s
     c41_u32v_t tv; // target vector
     hziv_t iv; // insn vector
     // c41_u64v_t c64v; // 64-bit const vector
-    int rn; // number of refs
     uint32_t cix; // current insn index
     uint32_t cbx; // current iblk index
     uint32_t ctx; // current target index
     uint32_t cpx; // current proc index
-    uint_t wmx; // index in loaded|unbound module table
+    int rn; // number of refs
+    int wmx; // index in loaded|unbound module table
+    int mid;
     hzw_t * w;
 };
 
@@ -337,6 +339,11 @@ HZAPI int C41_CALL hzw_init
 );
 
 /* hzw_finish ***************************************************************/
+/* Sends the four horsemen!
+ * Returns:
+ *  0               another job well done
+ *  HZF_BUG         unbound modules present, tasks running or other silly bugs
+ */
 HZAPI int C41_CALL hzw_finish
 (
     hzw_t * w
@@ -382,6 +389,10 @@ HZAPI int C41_CALL hzt_import
  * Creates an empty module.
  * The module is unbound which means changes can be made to its code.
  * Its ref count stays 0 when unbound.
+ * When all desired code is inserted in the module, use hzm_load() to bind
+ * the module to the world.
+ * If the module is not loaded, hzm_destroy() must be called 
+ * before the apocalypse hzw_finish()
  *
  * Returns:
  *  0               for success
@@ -391,6 +402,12 @@ HZAPI int C41_CALL hzm_create
 (
     hzw_t * w,
     hzm_t * * mp
+);
+
+/* hzm_destroy **************************************************************/
+HZAPI int C41_CALL hzm_destroy
+(
+    hzm_t * m
 );
 
 /* hzm_add_proc *************************************************************/
@@ -485,6 +502,11 @@ HZAPI int C41_CALL hzm_load
     hzm_t * m
 );
 
+/* hz_is_fatal **************************************************************/
+C41_INLINE int hz_is_fatal (int hze)
+{
+    return hze && hze < HZF__LIMIT;
+}
 
 #endif /* _HAZNA_V0_H_ */
 
