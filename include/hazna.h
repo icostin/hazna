@@ -465,14 +465,17 @@ HZAPI int C41_CALL hzm_add_insn
 /* hzm_seal_iblk ************************************************************/
 /**
  * Seals the current instruction block.
- * This function modifies the block with index m->cbx and sets its instructions
- * to those from index m->cix up to the last instruction (m->iv.n - 1).
- * Same thing happens to code blocks with indexes m->cbx...(m->bv.n - 1).
+ * This function modifies the 'current' block (block with index m->cbx) and 
+ * sets its instructions to those from index m->cix up to the last instruction 
+ * (m->iv.n - 1).
+ * Same thing happens to targets with indexes m->ctx...(m->tv.n - 1).
  * Then the indexes of current instructions and targets are set to the size of
  * those vectors and the current block index is incremented.
  * Block index 0 is a 'ghost' block that contains 1 instruction which tells
  * the interpreter to unwind the stack on exception so ebx = 0 means there is
  * no exception handling local in that block.
+ * This function does not fill px (proc index) as that is handled by 
+ * hzm_seal_proc().
  */
 HZAPI int C41_CALL hzm_seal_iblk
 (

@@ -244,3 +244,30 @@ HZAPI int C41_CALL hzm_add_proc
     return 0;
 }
 
+/* hzm_seal_iblk ************************************************************/
+HZAPI int C41_CALL hzm_seal_iblk
+(
+    hzm_t * m,
+    uint32_t ebx // exception block index
+)
+{
+    hziblk_t * b;
+
+    if (m->cbx == m->bv.n)
+    {
+        WF(m->w, "no current block; cannot seal!");
+        return HZF_BUG;
+    }
+
+    b = &m->bv.a[m->cbx++];
+    b->ix = m->cix;
+    b->in = m->iv.n - m->cix;
+    m->cix = m->iv.n;
+    b->tx = m->ctx;
+    b->tn = m->tv.n - m->ctx;
+    m->ctx = m->tv.n;
+    b->et = ebx;
+
+    return 0;
+}
+
