@@ -140,6 +140,8 @@ enum hzo_enum // {{{
                                 // block with index 0
     HZO_CALL, // direct call
     HZO_CALL_P32, // indirect call; C32 is some opaque proc pointer
+    HZO_RET,
+    HZO_DEBUG_OUTPUT_8,
 
     HZO_COPY_1,
     HZO_COPY_2,

@@ -23,6 +23,20 @@ uint_t test (c41_io_t * io_p, c41_ma_t * ma_p, c41_smt_t * smt_p)
 
         c = hzm_create(&w, &m);
         if (c) break;
+
+        c = hzm_add_proc(m);
+        if (c) break;
+
+        c = hzm_add_iblk(m);
+        if (c) break;
+
+        c = hzm_add_insn(m, HZO_DEBUG_OUTPUT_8, 'h', 0, 0);
+        if (c) break;
+        c = hzm_add_insn(m, HZO_DEBUG_OUTPUT_8, 'e', 0, 0);
+        if (c) break;
+        c = hzm_add_insn(m, HZO_RET, 0, 0, 0);
+        if (c) break;
+
         rc = 0;
     }
     while (0);
