@@ -61,6 +61,12 @@ HZAPI int C41_CALL hzm_create
         hze = hzm_add_proc(m);
         if (hze) break;
 
+        m->cix = 1;
+        m->ctx = 0;
+        m->cbx = 1;
+        m->sbx = 1;
+        m->spx = 1;
+
         MLOCK(w);
         w->umn++;
         MUNLOCK(w);
@@ -253,13 +259,13 @@ HZAPI int C41_CALL hzm_seal_iblk
 {
     hziblk_t * b;
 
-    if (m->cbx == m->bv.n)
+    if (m->sbx == m->bv.n)
     {
-        WF(m->w, "no current block; cannot seal!");
+        WF(m->w, "no seal block; cannot seal!");
         return HZF_BUG;
     }
 
-    b = &m->bv.a[m->cbx++];
+    b = &m->bv.a[m->sbx++];
     b->ix = m->cix;
     b->in = m->iv.n - m->cix;
     m->cix = m->iv.n;
@@ -267,6 +273,26 @@ HZAPI int C41_CALL hzm_seal_iblk
     b->tn = m->tv.n - m->ctx;
     m->ctx = m->tv.n;
     b->et = ebx;
+
+    return 0;
+}
+
+/* hzm_seal_proc ************************************************************/
+HZAPI int C41_CALL hzm_seal_proc
+(
+    hzm_t * m
+)
+{
+    hzproc_t * p;
+    if (m->spx == m->pv.n)
+    {
+        WF(m->w, "no seal proc");
+        return HZF_BUG;
+    }
+
+    p = &m->pv.a[m->spx++];
+    p->bx = m->cbx;
+    p->bn = m->bv.n - m->cbx;
 
     return 0;
 }

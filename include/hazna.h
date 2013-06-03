@@ -302,7 +302,7 @@ struct hzproc_s
 {
     uint32_t bx; // index of first block (also the entry point of the proc)
     uint32_t bn; // number of blocks
-    uint32_t rn; // number of bytes in register-space
+    uint32_t rn; // number of bits in register-space (they'll be aligned to 128 bits)
 };
 
 struct hzm_s
@@ -313,11 +313,12 @@ struct hzm_s
     hziv_t iv; // insn vector
     // c41_u64v_t c64v; // 64-bit const vector
     uint32_t cix; // current insn index
-    uint32_t cbx; // current iblk index
     uint32_t ctx; // current target index
-    uint32_t cpx; // current proc index
+    uint32_t cbx; // current iblk index
+    uint32_t sbx; // seal iblk index
+    uint32_t spx; // seal proc index
     int rn; // number of refs
-    int wmx; // index in loaded|unbound module table
+    int wmx; // index in loaded module table
     int mid;
     hzw_t * w;
 };
@@ -465,7 +466,7 @@ HZAPI int C41_CALL hzm_add_insn
 /* hzm_seal_iblk ************************************************************/
 /**
  * Seals the current instruction block.
- * This function modifies the 'current' block (block with index m->cbx) and 
+ * This function modifies the 'seal' block (block with index m->sbx) and 
  * sets its instructions to those from index m->cix up to the last instruction 
  * (m->iv.n - 1).
  * Same thing happens to targets with indexes m->ctx...(m->tv.n - 1).
@@ -486,7 +487,7 @@ HZAPI int C41_CALL hzm_seal_iblk
 /* hzm_seal_proc ************************************************************/
 /**
  * Seals the current procedure.
- * This function modifies the procedure with inde m->cpx and sets 
+ * This function modifies the procedure with index m->cpx and sets its blocks
  */
 HZAPI int C41_CALL hzm_seal_proc
 (
