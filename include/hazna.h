@@ -237,6 +237,8 @@ typedef struct hziblk_s                         hziblk_t; // insn block
 typedef struct hzproc_s                         hzproc_t;
 typedef struct hzm_s                            hzm_t; // code module
 
+typedef int (C41_CALL * hzyield_f) (hzt_t * t, void * ctx);
+
 C41_VECTOR_DECL(hztt_t, hzt_t *); // task table
 C41_VECTOR_DECL(hzxcv_t, hzxc_t);
 C41_VECTOR_DECL(hziv_t, hzinsn_t);
@@ -506,6 +508,23 @@ HZAPI int C41_CALL hzm_seal_proc
 HZAPI int C41_CALL hzm_load
 (
     hzm_t * m
+);
+
+/* hzt_xc_enter *************************************************************/
+HZAPI int C41_CALL hzt_xc_enter
+(
+    hzt_t * t,
+    uint32_t mx,
+    uint32_t px
+);
+
+/* hzt_run ******************************************************************/
+HZAPI int C41_CALL hzt_run
+(
+    hzt_t * t,
+    int yield_count, // number of insns to run before calling yield_func
+    hzyield_f yield_func,
+    void * yield_ctx
 );
 
 /* hz_is_fatal **************************************************************/

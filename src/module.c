@@ -20,6 +20,7 @@ static int load_module
 
     /* write the module table index into the module */
     m->wmx = x;
+    WD(w, "loaded module m$Ui in slot $Ui", m->mid, m->wmx);
 
     return 0;
 }
