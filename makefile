@@ -1,10 +1,10 @@
-N := hazna
-D := HAZNA
+N := hza
+D := HZA
 
-engine_csrcs := world task module misc
+engine_csrcs := core
 engine_libs := -lc41
 engine_pub_hdrs := include/$(N).h
-engine_priv_hdrs := src/libpriv.h
+engine_priv_hdrs :=
 engine_dl_opts := -ffreestanding -nostartfiles -nostdlib -Wl,-soname,lib$(N).so
 
 cli_csrcs := cli test

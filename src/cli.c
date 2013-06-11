@@ -1,17 +1,15 @@
 #include <c41.h>
 #include <hbs1.h>
-#include <hazna.h>
+#include <hza.h>
 
-enum cli_cmds
+uint8_t test (c41_io_t * log_io, c41_ma_t * ma, c41_smt_t * smt);
+
+enum cmd_enum
 {
     CMD_NONE = 0,
     CMD_HELP,
-    CMD_TEST,
+    CMD_TEST
 };
-
-
-uint_t test (c41_io_t * io_p, c41_ma_t * ma_p, c41_smt_t * smt_p);
-
 
 /* hmain ********************************************************************/
 uint8_t C41_CALL hmain (c41_cli_t * cli_p)

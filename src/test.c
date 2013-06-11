@@ -1,74 +1,28 @@
-#include <c41.h>
-#include <hazna.h>
+#include <hza.h>
 
-/* test *********************************************************************/
-uint_t test (c41_io_t * io_p, c41_ma_t * ma_p, c41_smt_t * smt_p)
+uint8_t test (c41_io_t * log_io, c41_ma_t * ma, c41_smt_t * smt)
 {
-    hzw_t w;
-    hzt_t * t = NULL;
-    hzm_t * m = NULL;
-    char wini = 0;
-    int c, rc;
+    uint8_t rc;
+    hza_error_t hze;
+    hza_context_t hcd;
+    hza_world_t wd;
 
-    c41_io_fmt(io_p, "[hazna] test\n- using engine: $s\n", hzlib_name());
+    rc = 0;
+
     do
     {
-        rc = 1;
-        c = hzw_init(&w, ma_p, smt_p, io_p, HZLL_DEBUG);
-        if (c) break;
-        wini = 1;
-        
-        c = hzt_create(&w, &t);
-        if (c) break;
+        if (c41_io_fmt(log_io, "* using lib: $s\n", hza_lib_name()) < 0)
+        {
+            rc |= 2;
+            break;
+        }
+        if (c41_io_fmt(log_io, "* ma: $p\n", ma) < 0) { rc |= 2; break; }
 
-        c = hzm_create(&w, &m);
-        if (c) break;
-
-        c = hzm_add_proc(m);
-        if (c) break;
-
-        c = hzm_add_iblk(m);
-        if (c) break;
-
-        c = hzm_add_insn(m, HZO_DEBUG_OUTPUT_8, 'h', 0, 0);
-        if (c) break;
-        c = hzm_add_insn(m, HZO_DEBUG_OUTPUT_8, 'e', 0, 0);
-        if (c) break;
-        c = hzm_add_insn(m, HZO_RET, 0, 0, 0);
-        if (c) break;
-
-        c = hzm_seal_iblk(m, 0);
-        if (c) break;
-
-        c = hzm_seal_proc(m);
-        if (c) break;
-
-        c = hzm_load(m);
-        if (c) break;
-
-        rc = 0;
+        hze = hza_init(&hcd, &wd, ma, smt, log_io, HZA_LL_DEBUG);
+        if (hze) { rc |= 1; break; }
     }
     while (0);
 
-    // if (m)
-    // {
-    //     c = hzm_destroy(m);
-    //     if (c) rc |= 2;
-    // }
-
-    if (t)
-    {
-        c = hzt_destroy(t);
-        if (c) rc |= 2;
-    }
-
-    if (wini)
-    {
-        c = hzw_finish(&w);
-        if (c) rc |= 2;
-    }
-
-    c41_io_fmt(io_p, "test result: $Ui\n", rc);
     return rc;
 }
 
