@@ -4,6 +4,18 @@
 #define L(_hc, _level, ...) \
     (log_msg((_hc), __FUNCTION__, __FILE__, __LINE__, (_level), __VA_ARGS__))
 
+#if _DEBUG
+#   define D(...) L(hc, HZA_LL_DEBUG, __VA_ARGS__)
+#else
+#   define D(...)
+#endif
+#define I(...) L(hc, HZA_LL_INFO, __VA_ARGS__)
+#define W(...) L(hc, HZA_LL_WARNING, __VA_ARGS__)
+#define E(...) L(hc, HZA_LL_ERROR, __VA_ARGS__)
+#define F(...) L(hc, HZA_LL_FATAL, __VA_ARGS__)
+
+#define WORLD_SIZE (sizeof(hza_world_t) + smt->mutex_size * 2)
+
 /* hza_lib_name *************************************************************/
 HZA_API char const * C41_CALL hza_lib_name ()
 {
@@ -17,7 +29,7 @@ HZA_API char const * C41_CALL hza_lib_name ()
 }
 
 /* log_msg *******************************************************************/
-#define E(...) do { \
+#define LME(...) do { \
     do { \
         if (c41_io_fmt(w->log_io, "W[$s:$s:$Ui] logging error: ", \
                        __FUNCTION__, __FILE__, __LINE__) < 0) break; \
@@ -44,7 +56,7 @@ static void log_msg
 
     if (w->log_level == HZA_LL_NONE) return;
     smte = c41_smt_mutex_lock(w->smt, w->log_mutex);
-    if (smte) E("failed locking log mutex ($i)", smte);
+    if (smte) LME("failed locking log mutex ($i)", smte);
 
     va_start(va, fmt);
     if (c41_io_fmt(w->log_io, "$c[$s:$s:$Ui] ", "NFEWID"[level],
@@ -53,14 +65,14 @@ static void log_msg
         c41_io_fmt(w->log_io, "\n") < 0)
     {
         va_end(va);
-        E("failed writing log message");
+        LME("failed writing log message");
     }
     va_end(va);
 
     smte = c41_smt_mutex_unlock(w->smt, w->log_mutex);
-    if (smte) E("failed unlocking log mutex ($i)", smte);
+    if (smte) LME("failed unlocking log mutex ($i)", smte);
 }
-#undef E
+#undef LME
 
 /* init_logging *************************************************************/
 static hza_error_t init_logging
@@ -78,13 +90,13 @@ static hza_error_t init_logging
 #endif
     w->log_level = log_level;
     w->log_io = log_io;
-    smte = c41_smt_mutex_create(&w->log_mutex, w->smt, w->ma);
+    smte = c41_smt_mutex_init(w->smt, w->log_mutex);
     if (smte)
     {
         hc->smt_error = smte;
-        return (hc->hza_error = HZA_LOG_MUTEX_CREATE_FAILED);
+        return (hc->hza_error = HZAE_LOG_MUTEX_INIT);
     }
-    L(hc, HZA_LL_INFO, "starting logging (log level $i)", log_level);
+    I("initing world $p (log level $i)", w, log_level);
 
     return 0;
 }
@@ -93,7 +105,6 @@ static hza_error_t init_logging
 HZA_API hza_error_t C41_CALL hza_init
 (
     hza_context_t * hc,
-    hza_world_t * w,
     c41_ma_t * ma,
     c41_smt_t * smt,
     c41_io_t * log_io,
@@ -101,20 +112,134 @@ HZA_API hza_error_t C41_CALL hza_init
 )
 {
     hza_error_t e;
+    hza_world_t * w;
+    int mae, smte;
 
+    /* clear the context struct */
     C41_VAR_ZERO(*hc);
-    C41_VAR_ZERO(*w);
-    hc->world = w;
-    w->ma = ma;
-    w->smt = smt;
 
-    if (log_level)
+    /* allocate space for the world and all needed mutexes */
+    mae = c41_ma_alloc_zero_fill(ma, (void * *) &w, WORLD_SIZE);
+    if (mae)
     {
-        e = init_logging(hc, log_io, log_level);
-        if (e) return e;
+        hc->ma_error = mae;
+        return (hc->hza_error = HZAE_WORLD_ALLOC);
     }
+    /* link the world in the context */
+    hc->world = w;
+
+    /* init few basic fields in the world */
+    w->world_ma = ma;
+    w->smt = smt;
+    w->world_mutex = (c41_smt_mutex_t *) (w + 1);
+    w->log_mutex = C41_PTR_OFS(w->world_mutex, smt->mutex_size);
+    w->context_count = 1;
+
+    /* init allocator; count allocs to detect leaks */
+    c41_ma_counter_init(&w->mac, ma,
+                        C41_SSIZE_MAX, C41_SSIZE_MAX, C41_SSIZE_MAX);
+    do
+    {
+        /* init logging as early as possible */
+        if (log_level)
+        {
+            e = init_logging(hc, log_io, log_level);
+            if (e) break;
+        }
+
+        smte = c41_smt_mutex_init(smt, w->world_mutex);
+        if (smte)
+        {
+            w->world_mutex = NULL;
+            E("failed initing world mutex ($i)", smte);
+            break;
+        }
+    }
+    while (0);
+
+    if (e)
+    {
+        /* failed initing the world */
+        hc->hza_error = e;
+        /* call finish unless something fatal happened */
+        if (e < HZA_FATAL) hza_finish(hc);
+        return e;
+    }
+    D("inited context $p and world $p", hc, w);
+
     return 0;
 }
 
+/* hza_finish ***************************************************************/
+HZA_API hza_error_t C41_CALL hza_finish
+(
+    hza_context_t * hc
+)
+{
+    hza_world_t * w = hc->world;
+    c41_smt_t * smt = w->smt;
+    int mae, smte, cc, dirty;
 
+    if (w->world_mutex)
+    {
+        /* lock the world */
+        smte = c41_smt_mutex_lock(smt, w->world_mutex);
+        if (smte)
+        {
+            E("failed locking world mutex ($i)", smte);
+            hc->smt_error = smte;
+            hc->hza_finish_error = HZAF_WORLD_MUTEX_LOCK;
+            return HZAF_WORLD_MUTEX_LOCK;
+        }
+        /* decrement the number of contexts pointing to this world */
+        cc = (w->context_count -= 1);
+        /* unlock the world */
+        smte = c41_smt_mutex_unlock(smt, w->world_mutex);
+        if (smte)
+        {
+            E("failed unlocking world mutex ($i)", smte);
+            hc->smt_error = smte;
+            hc->hza_finish_error = HZAF_WORLD_MUTEX_UNLOCK;
+            return HZAF_WORLD_MUTEX_UNLOCK;
+        }
+        /* if there are other contexts working with the world then exit */
+        D("finished context $p, world context count: $Ui", hc, cc);
+        if (cc > 0) return hc->hza_finish_error = 0;
+    }
+
+    /* destroy the world */
+    I("ending world $p...", w);
+
+    if (w->world_mutex)
+    {
+        smte = c41_smt_mutex_finish(smt, w->world_mutex);
+        if (smte)
+        {
+            E("failed finishing world mutex ($i)", smte);
+            hc->smt_error = smte;
+            dirty = 1;
+        }
+    }
+
+    if (w->log_mutex)
+    {
+        smte = c41_smt_mutex_finish(smt, w->log_mutex);
+        if (smte)
+        {
+            E("failed finishing logging mutex ($i)", smte);
+            hc->smt_error = smte;
+            dirty = 1;
+        }
+
+    }
+
+    mae = c41_ma_free(w->world_ma, w, WORLD_SIZE);
+    if (mae)
+    {
+        hc->ma_error = mae;
+        return HZAF_WORLD_FREE;
+    }
+
+    return (hc->hza_finish_error = dirty ? HZAE_WORLD_FINISH : 0);
+}
 

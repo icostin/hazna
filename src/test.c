@@ -5,7 +5,6 @@ uint8_t test (c41_io_t * log_io, c41_ma_t * ma, c41_smt_t * smt)
     uint8_t rc;
     hza_error_t hze;
     hza_context_t hcd;
-    hza_world_t wd;
 
     rc = 0;
 
@@ -18,8 +17,10 @@ uint8_t test (c41_io_t * log_io, c41_ma_t * ma, c41_smt_t * smt)
         }
         if (c41_io_fmt(log_io, "* ma: $p\n", ma) < 0) { rc |= 2; break; }
 
-        hze = hza_init(&hcd, &wd, ma, smt, log_io, HZA_LL_DEBUG);
+        hze = hza_init(&hcd, ma, smt, log_io, HZA_LL_DEBUG);
         if (hze) { rc |= 1; break; }
+
+        hze = hza_finish(&hcd);
     }
     while (0);
 

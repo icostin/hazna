@@ -16,11 +16,16 @@ enum hza_error_enum
 {
     HZA_OK = 0,
 
-    HZA_LOG_MUTEX_CREATE_FAILED,
+    HZAE_WORLD_ALLOC,
+    HZAE_LOG_MUTEX_INIT,
+    HZAE_WORLD_FINISH,
 
-    HZA__FATAL = 0x80,
-    HZA_BUG,
-    HZA_NO_CODE,
+    HZA_FATAL = 0x80,
+    HZAF_BUG,
+    HZAF_NO_CODE,
+    HZAF_WORLD_MUTEX_LOCK,
+    HZAF_WORLD_MUTEX_UNLOCK,
+    HZAF_WORLD_FREE
 };
 
 /* log levels */
@@ -106,6 +111,7 @@ struct hza_context_s
     uint_t ma_error;
     uint_t smt_error;
     hza_error_t hza_error;
+    hza_error_t hza_finish_error;
 };
 
 struct hza_world_s
@@ -113,7 +119,6 @@ struct hza_world_s
     c41_np_t loaded_module_list;
     c41_np_t unbound_module_list;
     c41_np_t task_list[HZA_TASK_STATES]; // list of suspended tasks
-    c41_ma_t * ma;
     c41_smt_t * smt; // multithreading interface
     uint_t task_id_seed;
     uint_t module_id_seed;
@@ -121,7 +126,8 @@ struct hza_world_s
     c41_smt_mutex_t * task_mutex; // task manager mutex
     c41_smt_mutex_t * module_mutex; // module manager mutex
     c41_ma_counter_t mac;
-
+    c41_ma_t * world_ma;
+    c41_smt_mutex_t * world_mutex;
     c41_smt_mutex_t * log_mutex;
     c41_io_t * log_io;
     uint8_t log_level;
@@ -211,7 +217,6 @@ HZA_API char const * C41_CALL hza_lib_name ();
 HZA_API hza_error_t C41_CALL hza_init
 (
     hza_context_t * hc,
-    hza_world_t * w,
     c41_ma_t * ma,
     c41_smt_t * smt,
     c41_io_t * log_io,
@@ -233,7 +238,7 @@ HZA_API hza_error_t C41_CALL hza_attach
 /* hza_finish ***************************************************************/
 /**
  * Finishes one context.
- * If this is the last context attached to the world then it will destroy 
+ * If this is the last context attached to the world then it will destroy
  * the world!
  * Returns:
  *  0 = HZA_OK                  success

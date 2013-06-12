@@ -94,7 +94,7 @@ even in different task memory spaces - which creates a way of transferring data
 in between tasks.
 
 The space always has all addresses pointing to some page, so there is no way of
-accessing missing pages (and getting page faults). This design is to ensure 
+accessing missing pages (and getting page faults). This design is to ensure
 fast execution of reads/writes without having branches in the interpreter.
 
 Licence
@@ -102,4 +102,31 @@ Licence
 Licence: ISC (Internet Systems Consortium)
 
 ISC licence is equivalent to Simplified BSD Licence but with simpler wording.
+
+Dependencies
+===
+* c41: Common C Code Collection
+    * freestanding library (no libs imported, not even libc if that is not available)
+* hbs1: Host Basic Services
+    * implements interfaces defined in c41, such as memory allocators or 
+        multithreading support
+    * this is the only place where platform-specific functions are used
+
+Build and install
+===
+I recommend adding these lines to your shell's login profile config file
+(.profile for sh/bash or .zprofile for zsh):
+
+    export PATH="$HOME/.local/bin:$PATH"
+    export CPATH="$HOME/.local/include"
+    export LD_LIBRARY_PATH="$HOME/.local/lib"
+    export LIBRARY_PATH="$HOME/.local/lib"
+
+This will enable you to build and install by running:
+    make install
+
+You can run the test program with:
+    make test
+or
+    hazna test
 
