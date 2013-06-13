@@ -2,14 +2,15 @@ hazna
 =====
 
 This project aims to design and implement a virtual execution environment
-that allows fairly fast execution as interpreted code or even just-in-time
-compiled native code.
+that allows fairly fast execution as interpreted code and it makes it easy
+to generate just-in-time compiled native code.
 
 The environment is a fusion of concepts from register-based virtual machines
 and operating system services.
 
 The whole library depends on a single freestanding library - c41. This makes
 it very easy to use the project under any platform as user/kernel module.
+
 
 World
 -----
@@ -22,7 +23,7 @@ A world consists mainly of code modules, tasks and a set of large buffers
 divided in pages.
 
 Execution happens in tasks and the code is separate from data.
-However it is possible to have a mechanism to load a module from raw data.
+It is possible to have a mechanism to load a module from raw data.
 
 Module
 ------
@@ -123,10 +124,15 @@ I recommend adding these lines to your shell's login profile config file
     export LIBRARY_PATH="$HOME/.local/lib"
 
 This will enable you to build and install by running:
+
     make install
 
 You can run the test program with:
+  
     make test
+    
 or
+
+    make install
     hazna test
 
