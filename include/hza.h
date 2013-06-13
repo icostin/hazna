@@ -303,6 +303,11 @@ HZA_API hza_error_t C41_CALL hza_add_target
 );
 
 /* hza_add_insn *************************************************************/
+/**
+ * Appends a new instruction to the given module.
+ * Returns:
+ *  0 = HZA_OK                  success
+ */
 HZA_API hza_error_t C41_CALL hza_add_insn
 (
     hza_context_t * hc,

@@ -134,6 +134,8 @@ HZA_API hza_error_t C41_CALL hza_init
     w->world_mutex = (c41_smt_mutex_t *) (w + 1);
     w->log_mutex = C41_PTR_OFS(w->world_mutex, smt->mutex_size);
     w->context_count = 1;
+    c41_dlist_init(&w->loaded_module_list);
+    c41_dlist_init(&w->unbound_module_list);
 
     /* init allocator; count allocs to detect leaks */
     c41_ma_counter_init(&w->mac, ma,
@@ -210,6 +212,12 @@ HZA_API hza_error_t C41_CALL hza_finish
     /* destroy the world */
     I("ending world $p...", w);
 
+    if (w->mac.total_size || w->mac.count)
+    {
+        E("memory leak: count = $z, size = $z = $Xz", 
+          w->mac.count, w->mac.total_size, w->mac.total_size);
+    }
+
     if (w->world_mutex)
     {
         smte = c41_smt_mutex_finish(smt, w->world_mutex);
@@ -230,7 +238,6 @@ HZA_API hza_error_t C41_CALL hza_finish
             hc->smt_error = smte;
             dirty = 1;
         }
-
     }
 
     mae = c41_ma_free(w->world_ma, w, WORLD_SIZE);
