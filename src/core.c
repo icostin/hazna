@@ -2,7 +2,10 @@
 #include "../include/hza.h"
 
 #define L(_hc, _level, ...) \
-    (log_msg((_hc), __FUNCTION__, __FILE__, __LINE__, (_level), __VA_ARGS__))
+    if ((_hc)->world->log_level >= (_level)) \
+        (log_msg((_hc), __FUNCTION__, __FILE__, __LINE__, \
+                 (_level), __VA_ARGS__)); \
+    else ((void) 0)
 
 #if _DEBUG
 #   define D(...) L(hc, HZA_LL_DEBUG, __VA_ARGS__)
@@ -136,6 +139,8 @@ HZA_API hza_error_t C41_CALL hza_init
     w->context_count = 1;
     c41_dlist_init(&w->loaded_module_list);
     c41_dlist_init(&w->unbound_module_list);
+    c41_dlist_init(&w->task_list[HZA_TASK_READY]);
+    c41_dlist_init(&w->task_list[HZA_TASK_SUSPENED]);
 
     /* init allocator; count allocs to detect leaks */
     c41_ma_counter_init(&w->mac, ma,
