@@ -114,22 +114,28 @@ struct hza_context_s
     hza_error_t hza_finish_error;
 };
 
+#define HZA_INIT_WORLD_MUTEX    (1 << 0)
+#define HZA_INIT_LOG_MUTEX      (1 << 1)
+#define HZA_INIT_MODULE_MUTEX   (1 << 2)
+#define HZA_INIT_TASK_MUTEX     (1 << 3)
+
 struct hza_world_s
 {
+    c41_np_t task_list[HZA_TASK_STATES]; // list of suspended tasks
     c41_np_t loaded_module_list;
     c41_np_t unbound_module_list;
-    c41_np_t task_list[HZA_TASK_STATES]; // list of suspended tasks
-    c41_smt_t * smt; // multithreading interface
-    uint_t task_id_seed;
-    uint_t module_id_seed;
-    uint_t context_count; // number of contexts attached to the world
     c41_smt_mutex_t * task_mutex; // task manager mutex
     c41_smt_mutex_t * module_mutex; // module manager mutex
+    c41_smt_t * smt; // multithreading interface
     c41_ma_counter_t mac;
     c41_ma_t * world_ma;
     c41_smt_mutex_t * world_mutex;
     c41_smt_mutex_t * log_mutex;
     c41_io_t * log_io;
+    uint_t task_id_seed;
+    uint_t module_id_seed;
+    uint_t context_count; // number of contexts attached to the world
+    uint16_t init_state;
     uint8_t log_level;
 };
 
@@ -251,6 +257,7 @@ HZA_API hza_error_t C41_CALL hza_finish
 /* hza_create_module ********************************************************/
 /**
  * Allocates and initialises an empty module.
+ * The module will be inserted in hza_world_t.unbound_module_list.
  * Returns:
  *  0 = HZA_OK                  success
  */
