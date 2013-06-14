@@ -9,9 +9,14 @@
 
 #if _DEBUG
 #   define D(...) L(hc, HZA_LL_DEBUG, __VA_ARGS__)
+#   define A(_cond) \
+    if ((_cond)) ; \
+    else do { F("ASSERTION FAILED: $s", #_cond); return HZAF_BUG; } while (0)
 #else
 #   define D(...)
+#   define A(_cond)
 #endif
+
 #define I(...) L(hc, HZA_LL_INFO, __VA_ARGS__)
 #define W(...) L(hc, HZA_LL_WARNING, __VA_ARGS__)
 #define E(...) L(hc, HZA_LL_ERROR, __VA_ARGS__)
@@ -22,13 +27,34 @@
 /* hza_lib_name *************************************************************/
 HZA_API char const * C41_CALL hza_lib_name ()
 {
-    return "hazna"
+    return "hazna-v00"
 #if _DEBUG
         "-debug"
 #else
         "-release"
 #endif
         ;
+}
+
+/* hza_error_name ***********************************************************/
+HZA_API char const * C41_CALL hza_error_name (hza_error_t e)
+{
+#define X(_x) case _x: return #_x
+    switch (e)
+    {
+        X(HZAE_WORLD_ALLOC);
+        X(HZAE_WORLD_FINISH);
+        X(HZAE_LOG_MUTEX_INIT);
+
+        X(HZAF_BUG);
+        X(HZAF_NO_CODE);
+        X(HZAF_WORLD_MUTEX_LOCK);
+        X(HZAF_WORLD_MUTEX_UNLOCK);
+        X(HZAF_WORLD_FREE);
+    }
+
+    return e < HZA_FATAL ? "HZAE_UNKNOWN" : "HZAF_UNKNOWN";
+#undef X
 }
 
 /* log_msg *******************************************************************/
@@ -103,6 +129,20 @@ static hza_error_t init_logging
     w->init_state |= HZA_INIT_LOG_MUTEX;
 
     return 0;
+}
+
+/* alloc ********************************************************************/
+static hza_error_t alloc
+(
+    hza_context_t * hc,
+    void * * out
+)
+{
+    // hza_world_t * w = hc->world;
+
+    *out = NULL;
+
+    return hc->hza_error = HZAF_NO_CODE;
 }
 
 /* hza_init *****************************************************************/
@@ -296,4 +336,25 @@ HZA_API hza_error_t C41_CALL hza_finish
 
     return (hc->hza_finish_error = dirty ? HZAE_WORLD_FINISH : 0);
 }
+
+/* hza_create_module ********************************************************/
+HZA_API hza_error_t C41_CALL hza_create_module
+(
+    hza_context_t * hc,
+    hza_module_t * * mp
+)
+{
+    hza_error_t e;
+    
+    e = alloc(hc, (void * *) mp);
+    if (e)
+    {
+        E("module alloc failed: $s (code $i), ma_error = $i",
+          hza_error_name(e), e, hc->ma_error);
+        return e;
+    }
+
+    return (hc->hza_error = HZAF_NO_CODE);
+}
+
 

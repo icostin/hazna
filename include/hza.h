@@ -17,8 +17,8 @@ enum hza_error_enum
     HZA_OK = 0,
 
     HZAE_WORLD_ALLOC,
-    HZAE_LOG_MUTEX_INIT,
     HZAE_WORLD_FINISH,
+    HZAE_LOG_MUTEX_INIT,
 
     HZA_FATAL = 0x80,
     HZAF_BUG,
@@ -212,7 +212,11 @@ struct hza_insn_s
     uint16_t a, b, c;
 };
 
+/* hza_lib_name *************************************************************/
 HZA_API char const * C41_CALL hza_lib_name ();
+
+/* hza_error_name ***********************************************************/
+HZA_API char const * C41_CALL hza_error_name (hza_error_t e);
 
 /* hza_init *****************************************************************/
 /**
