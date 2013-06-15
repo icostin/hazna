@@ -19,12 +19,13 @@ enum hza_error_enum
     HZAE_WORLD_ALLOC,
     HZAE_WORLD_FINISH,
     HZAE_LOG_MUTEX_INIT,
+    HZAE_ALLOC,
 
     HZA_FATAL = 0x80,
     HZAF_BUG,
     HZAF_NO_CODE,
-    HZAF_WORLD_MUTEX_LOCK,
-    HZAF_WORLD_MUTEX_UNLOCK,
+    HZAF_MUTEX_LOCK,
+    HZAF_MUTEX_UNLOCK,
     HZAF_WORLD_FREE
 };
 
@@ -112,6 +113,7 @@ struct hza_context_s
     uint_t smt_error;
     hza_error_t hza_error;
     hza_error_t hza_finish_error;
+    intptr_t args[4]; // arguments for some internal callback functions
 };
 
 #define HZA_INIT_WORLD_MUTEX    (1 << 0)

@@ -45,11 +45,12 @@ HZA_API char const * C41_CALL hza_error_name (hza_error_t e)
         X(HZAE_WORLD_ALLOC);
         X(HZAE_WORLD_FINISH);
         X(HZAE_LOG_MUTEX_INIT);
+        X(HZAE_ALLOC);
 
         X(HZAF_BUG);
         X(HZAF_NO_CODE);
-        X(HZAF_WORLD_MUTEX_LOCK);
-        X(HZAF_WORLD_MUTEX_UNLOCK);
+        X(HZAF_MUTEX_LOCK);
+        X(HZAF_MUTEX_UNLOCK);
         X(HZAF_WORLD_FREE);
     }
 
@@ -131,18 +132,48 @@ static hza_error_t init_logging
     return 0;
 }
 
-/* alloc ********************************************************************/
-static hza_error_t alloc
+/* run_locked ***************************************************************/
+/**
+ * Executes func() after it locks the given mutex.
+ * If func() returns a fatal error it will just forward that error. Otherwise
+ * it will unlock the mutex and forward the return value of func().
+ * Returns:
+ *  0                           func() returned success and locking/unlocking
+ *                              worked fine
+ *  HZAF_MUTEX_LOCK             mutex lock failed, func() was not executed
+ *  HZAF_MUTEX_UNLOCK           mutex unlock failed, after func() was ran
+ *  other error                 func() returned that
+ **/
+static hza_error_t run_locked
 (
     hza_context_t * hc,
-    void * * out
+    hza_error_t (C41_CALL * func) (hza_context_t * hc),
+    c41_smt_mutex_t * mutex
 )
 {
-    // hza_world_t * w = hc->world;
+    hza_world_t * w = hc->world;
+    int smte;
+    hza_error_t e;
 
-    *out = NULL;
+    smte = c41_smt_mutex_lock(w->smt, mutex);
+    if (smte)
+    {
+        F("failed locking mutex $p (smt error: $i)", mutex, smte);
+        hc->smt_error = smte;
+        return (hc->hza_error = HZAF_MUTEX_LOCK);
+    }
 
-    return hc->hza_error = HZAF_NO_CODE;
+    e = func(hc);
+
+    smte = c41_smt_mutex_unlock(w->smt, mutex);
+    if (smte)
+    {
+        F("failed unlocking mutex $p (smt error: $i)", mutex, smte);
+        hc->smt_error = smte;
+        return (hc->hza_error = HZAF_MUTEX_UNLOCK);
+    }
+
+    return e;
 }
 
 /* hza_init *****************************************************************/
@@ -255,8 +286,8 @@ HZA_API hza_error_t C41_CALL hza_finish
         {
             E("failed locking world mutex ($i)", smte);
             hc->smt_error = smte;
-            hc->hza_finish_error = HZAF_WORLD_MUTEX_LOCK;
-            return HZAF_WORLD_MUTEX_LOCK;
+            hc->hza_finish_error = HZAF_MUTEX_LOCK;
+            return HZAF_MUTEX_LOCK;
         }
         /* decrement the number of contexts pointing to this world */
         cc = (w->context_count -= 1);
@@ -266,8 +297,8 @@ HZA_API hza_error_t C41_CALL hza_finish
         {
             E("failed unlocking world mutex ($i)", smte);
             hc->smt_error = smte;
-            hc->hza_finish_error = HZAF_WORLD_MUTEX_UNLOCK;
-            return HZAF_WORLD_MUTEX_UNLOCK;
+            hc->hza_finish_error = HZAF_MUTEX_UNLOCK;
+            return HZAF_MUTEX_UNLOCK;
         }
         /* if there are other contexts working with the world then exit */
         D("finished context $p, world context count: $Ui", hc, cc);
@@ -279,7 +310,7 @@ HZA_API hza_error_t C41_CALL hza_finish
 
     if (w->mac.total_size || w->mac.count)
     {
-        E("memory leak: count = $z, size = $z = $Xz", 
+        E("memory leak: count = $z, size = $z = $Xz",
           w->mac.count, w->mac.total_size, w->mac.total_size);
     }
 
@@ -337,6 +368,34 @@ HZA_API hza_error_t C41_CALL hza_finish
     return (hc->hza_finish_error = dirty ? HZAE_WORLD_FINISH : 0);
 }
 
+/* alloc_module *************************************************************/
+/**
+ * This should be called with the world mutex locked.
+ * Fills in hc->args[0] with the pointer to the  allocated module.
+ * The module is not linked into the world, just allocated.
+ */
+static hza_error_t C41_CALL alloc_module
+(
+    hza_context_t * hc
+)
+{
+    hza_world_t * w = hc->world;
+    hza_module_t * m;
+    int mae;
+
+    mae = c41_ma_alloc_zero_fill(&w->mac.ma, (void * *) &m,
+                                 sizeof(hza_module_t));
+    if (mae)
+    {
+        E("failed allocating module (ma error $i)\n", mae);
+        hc->ma_error = mae;
+        return (hc->hza_error = HZAE_ALLOC);
+    }
+    hc->args[0] = (intptr_t) m;
+
+    return 0;
+}
+
 /* hza_create_module ********************************************************/
 HZA_API hza_error_t C41_CALL hza_create_module
 (
@@ -344,15 +403,19 @@ HZA_API hza_error_t C41_CALL hza_create_module
     hza_module_t * * mp
 )
 {
+    hza_world_t * w = hc->world;
     hza_error_t e;
-    
-    e = alloc(hc, (void * *) mp);
+    hza_module_t * m;
+
+    e = run_locked(hc, alloc_module, w->world_mutex);
     if (e)
     {
-        E("module alloc failed: $s (code $i), ma_error = $i",
-          hza_error_name(e), e, hc->ma_error);
+        E("failed alocating module in locked state: $s = $i",
+          hza_error_name(e), e);
         return e;
     }
+
+    *mp = m = (hza_module_t *) hc->args[0];
 
     return (hc->hza_error = HZAF_NO_CODE);
 }
