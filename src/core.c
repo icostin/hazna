@@ -1,6 +1,7 @@
 #include <stdarg.h>
 #include "../include/hza.h"
 
+/* macros *******************************************************************/
 #define L(_hc, _level, ...) \
     if ((_hc)->world->log_level >= (_level)) \
         (log_msg((_hc), __FUNCTION__, __FILE__, __LINE__, \
@@ -23,6 +24,84 @@
 #define F(...) L(hc, HZA_LL_FATAL, __VA_ARGS__)
 
 #define WORLD_SIZE (sizeof(hza_world_t) + smt->mutex_size * 4)
+
+/* static functions *********************************************************/
+
+/* log_msg ******************************************************************/
+/**
+ * Logs a message with the world's log mutex locked.
+ * If there's any error locking/unlocking or writing the message, the function
+ * will just disable logging.
+ **/
+static void log_msg
+(
+    hza_context_t * hc,
+    char const * func,
+    char const * src,
+    int line,
+    int level,
+    char const * fmt,
+    ...
+);
+
+/* init_logging *************************************************************/
+/**
+ * Initialises the log mutex and world variables for logging.
+ **/
+static hza_error_t init_logging
+(
+    hza_context_t * hc,
+    c41_io_t * log_io,
+    uint8_t log_level
+);
+
+/* run_locked ***************************************************************/
+/**
+ * Executes func() after it locks the given mutex.
+ * If func() returns a fatal error it will just forward that error. Otherwise
+ * it will unlock the mutex and forward the return value of func().
+ * Returns:
+ *  0                           func() returned success and locking/unlocking
+ *                              worked fine
+ *  HZAF_MUTEX_LOCK             mutex lock failed, func() was not executed
+ *  HZAF_MUTEX_UNLOCK           mutex unlock failed, after func() was ran
+ *  other error                 func() returned that
+ **/
+static hza_error_t run_locked
+(
+    hza_context_t * hc,
+    hza_error_t (C41_CALL * func) (hza_context_t * hc),
+    c41_smt_mutex_t * mutex
+);
+
+/* alloc_module *************************************************************/
+/**
+ * Allocates data for a module.
+ * This should be called with the world mutex locked.
+ * Fills in hc->args[0] with the pointer to the  allocated module.
+ * The module is not linked into the world, just allocated.
+ */
+static hza_error_t C41_CALL alloc_module
+(
+    hza_context_t * hc
+);
+
+/* free_module **************************************************************/
+/**
+ * Frees data for a module.
+ * This should be called with the world mutex locked.
+ * The function work with partially initialised modules so that
+ * alloc_module() can call this if it encounters errors at some allocation
+ * The module to be freed is passed in hc->args[0]
+ * Returns:
+ *  0                           ok
+ *  HZAF_FREE                   likely heap corruption while freeing;
+ *                              hc->ma_free_error has the ma error
+ **/
+static hza_error_t C41_CALL free_module
+(
+    hza_context_t * hc
+);
 
 /* hza_lib_name *************************************************************/
 HZA_API char const * C41_CALL hza_lib_name ()
@@ -133,17 +212,6 @@ static hza_error_t init_logging
 }
 
 /* run_locked ***************************************************************/
-/**
- * Executes func() after it locks the given mutex.
- * If func() returns a fatal error it will just forward that error. Otherwise
- * it will unlock the mutex and forward the return value of func().
- * Returns:
- *  0                           func() returned success and locking/unlocking
- *                              worked fine
- *  HZAF_MUTEX_LOCK             mutex lock failed, func() was not executed
- *  HZAF_MUTEX_UNLOCK           mutex unlock failed, after func() was ran
- *  other error                 func() returned that
- **/
 static hza_error_t run_locked
 (
     hza_context_t * hc,
@@ -369,11 +437,6 @@ HZA_API hza_error_t C41_CALL hza_finish
 }
 
 /* alloc_module *************************************************************/
-/**
- * This should be called with the world mutex locked.
- * Fills in hc->args[0] with the pointer to the  allocated module.
- * The module is not linked into the world, just allocated.
- */
 static hza_error_t C41_CALL alloc_module
 (
     hza_context_t * hc
@@ -382,16 +445,127 @@ static hza_error_t C41_CALL alloc_module
     hza_world_t * w = hc->world;
     hza_module_t * m;
     int mae;
+    hza_error_t e;
 
-    mae = c41_ma_alloc_zero_fill(&w->mac.ma, (void * *) &m,
-                                 sizeof(hza_module_t));
+    mae = C41_VAR_ALLOC1Z(&w->mac.ma, m);
+    hc->args[0] = (intptr_t) m;
     if (mae)
     {
         E("failed allocating module (ma error $i)\n", mae);
         hc->ma_error = mae;
         return (hc->hza_error = HZAE_ALLOC);
     }
-    hc->args[0] = (intptr_t) m;
+
+    m->proc_limit = 2;
+    mae = C41_VAR_ALLOCZ(&w->mac.ma, m->proc_table, m->proc_limit);
+    if (mae)
+    {
+        E("failed allocating proc table for new module (ma error $i)\n", mae);
+        hc->ma_error = mae;
+        e = free_module(hc);
+        if (e) return e;
+        return (hc->hza_error = HZAE_ALLOC);
+    }
+
+    m->block_limit = 2;
+    mae = C41_VAR_ALLOCZ(&w->mac.ma, m->block_table, m->block_limit);
+    if (mae)
+    {
+        E("failed allocating block table for new module (ma error $i)\n", mae);
+        hc->ma_error = mae;
+        e = free_module(hc);
+        if (e) return e;
+        return (hc->hza_error = HZAE_ALLOC);
+    }
+
+    m->insn_limit = 2;
+    mae = C41_VAR_ALLOCZ(&w->mac.ma, m->insn_table, m->insn_limit);
+    if (mae)
+    {
+        E("failed allocating insn table for new module (ma error $i)\n", mae);
+        hc->ma_error = mae;
+        e = free_module(hc);
+        if (e) return e;
+        return (hc->hza_error = HZAE_ALLOC);
+    }
+
+    m->target_limit = 2;
+    mae = C41_VAR_ALLOCZ(&w->mac.ma, m->target_table, m->target_limit);
+    if (mae)
+    {
+        E("failed allocating target table for new module (ma error $i)\n", mae);
+        hc->ma_error = mae;
+        e = free_module(hc);
+        if (e) return e;
+        return (hc->hza_error = HZAE_ALLOC);
+    }
+
+    return 0;
+}
+
+/* free_module **************************************************************/
+static hza_error_t C41_CALL free_module
+(
+    hza_context_t * hc
+)
+{
+    hza_world_t * w = hc->world;
+    hza_module_t * m = (hza_module_t *) hc->args[0];
+    int mae;
+
+    if (!m) return 0;
+
+    if (m->proc_table)
+    {
+        mae = C41_VAR_FREE(&w->mac.ma, m->proc_table, m->proc_limit);
+        if (mae)
+        {
+            F("failed freeing proc table for module (ma error $i)\n", mae);
+            hc->ma_free_error = mae;
+            return (hc->hza_error = HZAF_FREE);
+        }
+    }
+
+    if (m->block_table)
+    {
+        mae = C41_VAR_FREE(&w->mac.ma, m->block_table, m->block_limit);
+        if (mae)
+        {
+            F("failed freeing block table for module (ma error $i)\n", mae);
+            hc->ma_free_error = mae;
+            return (hc->hza_error = HZAF_FREE);
+        }
+    }
+
+    if (m->insn_table)
+    {
+        mae = C41_VAR_FREE(&w->mac.ma, m->insn_table, m->insn_limit);
+        if (mae)
+        {
+            F("failed freeing insn table for module (ma error $i)\n", mae);
+            hc->ma_free_error = mae;
+            return (hc->hza_error = HZAF_FREE);
+        }
+    }
+
+    if (m->target_table)
+    {
+        mae = C41_VAR_FREE(&w->mac.ma, m->target_table, m->target_limit);
+        if (mae)
+        {
+            F("failed freeing target table for module (ma error $i)\n", mae);
+            hc->ma_free_error = mae;
+            return (hc->hza_error = HZAF_FREE);
+        }
+    }
+
+    mae = C41_VAR_FREE1(&w->mac.ma, m);
+    if (mae)
+    {
+        F("error freeing module (ma error $i)\n", mae);
+        hc->ma_free_error = mae;
+        return (hc->hza_error = HZAF_FREE);
+    }
 
     return 0;
 }

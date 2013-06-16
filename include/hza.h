@@ -26,7 +26,8 @@ enum hza_error_enum
     HZAF_NO_CODE,
     HZAF_MUTEX_LOCK,
     HZAF_MUTEX_UNLOCK,
-    HZAF_WORLD_FREE
+    HZAF_WORLD_FREE,
+    HZAF_FREE,
 };
 
 /* log levels */
@@ -110,6 +111,7 @@ struct hza_context_s
 {
     hza_world_t * world;
     uint_t ma_error;
+    uint_t ma_free_error;
     uint_t smt_error;
     hza_error_t hza_error;
     hza_error_t hza_finish_error;
