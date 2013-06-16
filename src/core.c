@@ -10,12 +10,12 @@
 
 #if _DEBUG
 #   define D(...) L(hc, HZA_LL_DEBUG, __VA_ARGS__)
-#   define A(_cond) \
+#   define ASSERT(_cond) \
     if ((_cond)) ; \
     else do { F("ASSERTION FAILED: $s", #_cond); return HZAF_BUG; } while (0)
 #else
 #   define D(...)
-#   define A(_cond)
+#   define ASSERT(_cond)
 #endif
 
 #define I(...) L(hc, HZA_LL_INFO, __VA_ARGS__)
@@ -99,6 +99,20 @@ static hza_error_t C41_CALL alloc_module
  *                              hc->ma_free_error has the ma error
  **/
 static hza_error_t C41_CALL free_module
+(
+    hza_context_t * hc
+);
+
+/* init_module **************************************************************/
+/**
+ * Initialises a just-created module into the unbound module list and
+ * assigns current context as the owner (the only one allowed to change).
+ * This should be called while holding the module mutex.
+ * The module is passed in hc->args[0]
+ * Returns:
+ *  0                           ok
+ **/
+static hza_error_t C41_CALL init_module
 (
     hza_context_t * hc
 );
@@ -205,7 +219,7 @@ static hza_error_t init_logging
         hc->smt_error = smte;
         return (hc->hza_error = HZAE_LOG_MUTEX_INIT);
     }
-    I("initing world $p (log level $i)", w, log_level);
+    I("initing world $#G4p (log level $i)", w, log_level);
     w->init_state |= HZA_INIT_LOG_MUTEX;
 
     return 0;
@@ -226,7 +240,7 @@ static hza_error_t run_locked
     smte = c41_smt_mutex_lock(w->smt, mutex);
     if (smte)
     {
-        F("failed locking mutex $p (smt error: $i)", mutex, smte);
+        F("failed locking mutex $#G4p (smt error: $i)", mutex, smte);
         hc->smt_error = smte;
         return (hc->hza_error = HZAF_MUTEX_LOCK);
     }
@@ -236,7 +250,7 @@ static hza_error_t run_locked
     smte = c41_smt_mutex_unlock(w->smt, mutex);
     if (smte)
     {
-        F("failed unlocking mutex $p (smt error: $i)", mutex, smte);
+        F("failed unlocking mutex $#G4p (smt error: $i)", mutex, smte);
         hc->smt_error = smte;
         return (hc->hza_error = HZAF_MUTEX_UNLOCK);
     }
@@ -330,7 +344,7 @@ HZA_API hza_error_t C41_CALL hza_init
         if (e < HZA_FATAL) hza_finish(hc);
         return e;
     }
-    D("inited context $p and world $p", hc, w);
+    D("inited context $#G4p and world $#G4p", hc, w);
     D("mutex size: $z", smt->mutex_size);
 
     return 0;
@@ -344,7 +358,10 @@ HZA_API hza_error_t C41_CALL hza_finish
 {
     hza_world_t * w = hc->world;
     c41_smt_t * smt = w->smt;
+    hza_module_t * m;
+    hza_module_t * mn;
     int mae, smte, cc, dirty;
+    hza_error_t e;
 
     if ((w->init_state & HZA_INIT_WORLD_MUTEX))
     {
@@ -369,16 +386,31 @@ HZA_API hza_error_t C41_CALL hza_finish
             return HZAF_MUTEX_UNLOCK;
         }
         /* if there are other contexts working with the world then exit */
-        D("finished context $p, world context count: $Ui", hc, cc);
+        D("finished context $#G4p, world context count: $Ui", hc, cc);
         if (cc > 0) return hc->hza_finish_error = 0;
     }
 
     /* destroy the world */
-    I("ending world $p...", w);
+    I("ending world $#G4p...", w);
+
+    for (m = (hza_module_t *) w->unbound_module_list.next;
+         m != (hza_module_t *) &w->unbound_module_list;
+         m = mn)
+    {
+        mn = (hza_module_t *) m->links.next;
+        hc->args[0] = (intptr_t) m;
+        e = free_module(hc);
+        if (e)
+        {
+            F("failed freeing module $Ui: $s = $i", m->module_id,
+              hza_error_name(e), e);
+            return e;
+        }
+    }
 
     if (w->mac.total_size || w->mac.count)
     {
-        E("memory leak: count = $z, size = $z = $Xz",
+        E("******** MEMORY LEAK: count = $z, size = $z = $Xz ********",
           w->mac.count, w->mac.total_size, w->mac.total_size);
     }
 
@@ -570,6 +602,21 @@ static hza_error_t C41_CALL free_module
     return 0;
 }
 
+/* init_module **************************************************************/
+static hza_error_t C41_CALL init_module
+(
+    hza_context_t * hc
+)
+{
+    hza_world_t * w = hc->world;
+    hza_module_t * m = (hza_module_t *) hc->args[0];
+    m->owner = hc;
+    m->module_id = w->module_id_seed++;
+    C41_DLIST_APPEND(w->unbound_module_list, m, links);
+    D("inited module: ptr=$#G4p id=$Ui", m, m->module_id);
+    return 0;
+}
+
 /* hza_create_module ********************************************************/
 HZA_API hza_error_t C41_CALL hza_create_module
 (
@@ -578,7 +625,7 @@ HZA_API hza_error_t C41_CALL hza_create_module
 )
 {
     hza_world_t * w = hc->world;
-    hza_error_t e;
+    hza_error_t e, fe;
     hza_module_t * m;
 
     e = run_locked(hc, alloc_module, w->world_mutex);
@@ -591,7 +638,22 @@ HZA_API hza_error_t C41_CALL hza_create_module
 
     *mp = m = (hza_module_t *) hc->args[0];
 
-    return (hc->hza_error = HZAF_NO_CODE);
+    e = run_locked(hc, init_module, w->module_mutex);
+    if (e)
+    {
+        E("failed initialising module (with module mutex locked): $s = $i",
+          hza_error_name(e), e);
+        fe = run_locked(hc, free_module, w->world_mutex);
+        if (fe)
+        {
+            F("failed freeing module after its init failed: $s = $i",
+              hza_error_name(fe), fe);
+            return fe;
+        }
+        return e;
+    }
+
+    return (0);
 }
 
 

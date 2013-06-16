@@ -125,8 +125,16 @@ struct hza_context_s
 
 struct hza_world_s
 {
-    c41_np_t task_list[HZA_TASK_STATES]; // list of suspended tasks
-    c41_np_t loaded_module_list;
+    c41_np_t task_list[HZA_TASK_STATES]; 
+    /*< Task queues.
+        Access these with #task_mutex locked!
+        */
+    c41_np_t loaded_module_list; 
+    /*< Loaded modules list.
+     *  These modules have been processes/optimised/JITed and so on.
+     *  No changes are allowed to these.
+     *  They can be imported in tasks.
+     */
     c41_np_t unbound_module_list;
     c41_smt_mutex_t * task_mutex; // task manager mutex
     c41_smt_mutex_t * module_mutex; // module manager mutex
@@ -179,6 +187,7 @@ struct hza_module_s
     hza_block_t * block_table;
     hza_insn_t * insn_table;
     uint32_t * target_table;
+    hza_context_t * owner;
 
     uint32_t proc_count, proc_limit;
     uint32_t proc_unsealed; // index of the proc
@@ -265,7 +274,9 @@ HZA_API hza_error_t C41_CALL hza_finish
 /* hza_create_module ********************************************************/
 /**
  * Allocates and initialises an empty module.
- * The module will be inserted in hza_world_t.unbound_module_list.
+ * The module will be inserted in hza_world_t.unbound_module_list and is
+ * owned by the current context. The caller must evetually release it in 
+ * the wild by calling hza_release_module().
  * Returns:
  *  0 = HZA_OK                  success
  */
@@ -273,6 +284,18 @@ HZA_API hza_error_t C41_CALL hza_create_module
 (
     hza_context_t * hc,
     hza_module_t * * mp
+);
+
+/* hza_release_module *******************************************************/
+/**
+ * Releases the ownership of the given module.
+ * Returns:
+ *  0 = HZA_OK                  success
+ **/
+HZA_API hza_error_t C41_CALL hza_release_module
+(
+    hza_context_t * hc,
+    hza_module_t * m
 );
 
 /* hza_add_proc *************************************************************/
