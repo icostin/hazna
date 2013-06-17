@@ -28,6 +28,43 @@ enum hza_error_enum
     HZAF_MUTEX_UNLOCK,
     HZAF_WORLD_FREE,
     HZAF_FREE,
+    HZAF_ALLOC,
+};
+
+enum hza_opcode_enum
+{
+    HZAO_NOP = 0,
+    HZAO_RETURN,
+    HZAO_OUTPUT_DEBUG_CHAR, /* output-debug-char r32:aaaa */
+
+    /* const-N  rN:aaaa, CONST_POOL:(bbbb | (cccc << 16)) */
+    HZAO_CONST_1 = 8,
+    HZAO_CONST_2,
+    HZAO_CONST_4,
+    HZAO_CONST_8,
+    HZAO_CONST_16,
+    HZAO_CONST_32,
+    HZAO_CONST_64,
+    HZAO_CONST_128,
+
+    /* zxconst-N rN:aaaa, zero_extend(bbbb | (cccc << 16)) */
+    HZAO_ZXCONST_1 = 8,
+    HZAO_ZXCONST_2,
+    HZAO_ZXCONST_4,
+    HZAO_ZXCONST_8,
+    HZAO_ZXCONST_16,
+    HZAO_ZXCONST_32,
+    HZAO_ZXCONST_64,
+    HZAO_ZXCONST_128,
+    /* sxconst-N rN:aaaa, sign_extend(bbbb | (cccc << 16)) */
+    HZAO_SXCONST_1 = 8,
+    HZAO_SXCONST_2,
+    HZAO_SXCONST_4,
+    HZAO_SXCONST_8,
+    HZAO_SXCONST_16,
+    HZAO_SXCONST_32,
+    HZAO_SXCONST_64,
+    HZAO_SXCONST_128,
 };
 
 /* log levels */
@@ -42,6 +79,8 @@ enum hza_error_enum
 #define HZA_TASK_READY 0
 #define HZA_TASK_SUSPENED 1
 #define HZA_TASK_STATES 2
+
+#define HZA_MAX_PROC 0x1000000 // 16M procs per module tops!
 
 /* hza_error_t **************************************************************/
 /**
@@ -125,11 +164,11 @@ struct hza_context_s
 
 struct hza_world_s
 {
-    c41_np_t task_list[HZA_TASK_STATES]; 
+    c41_np_t task_list[HZA_TASK_STATES];
     /*< Task queues.
         Access these with #task_mutex locked!
         */
-    c41_np_t loaded_module_list; 
+    c41_np_t loaded_module_list;
     /*< Loaded modules list.
      *  These modules have been processes/optimised/JITed and so on.
      *  No changes are allowed to these.
@@ -275,7 +314,7 @@ HZA_API hza_error_t C41_CALL hza_finish
 /**
  * Allocates and initialises an empty module.
  * The module will be inserted in hza_world_t.unbound_module_list and is
- * owned by the current context. The caller must evetually release it in 
+ * owned by the current context. The caller must evetually release it in
  * the wild by calling hza_release_module().
  * Returns:
  *  0 = HZA_OK                  success
@@ -318,6 +357,7 @@ HZA_API hza_error_t C41_CALL hza_add_proc
  * Appends a new block to an unbound module.
  * Returns:
  *  0 = HZA_OK                  success
+ *  HZAE_ALLOC                  alloc failed
  **/
 HZA_API hza_error_t C41_CALL hza_add_block
 (

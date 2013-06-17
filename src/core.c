@@ -117,6 +117,36 @@ static hza_error_t C41_CALL init_module
     hza_context_t * hc
 );
 
+/* release_module ***********************************************************/
+/**
+ * Releases ownership of a module.
+ * The module is passed in hc->args[0]
+ **/
+static hza_error_t C41_CALL release_module
+(
+    hza_context_t * hc
+);
+
+/* realloc_table ************************************************************/
+/**
+ * Reallocates a given array.
+ * Should be called while world mutex is locked!
+ * hc->args[0] - is the current array data pointer
+ * hc->argc[1] - item size
+ * hc->args[2] - desired item count
+ * hc->args[3] - current item count
+ * The function returns the new pointer in hc->args[0], if successful.
+ * Returns:
+ *  0                           success
+ *  HZAE_ALLOC                  alloc failed
+ *  HZAF_ALLOC                  heap corruption
+ **/
+static hza_error_t C41_CALL realloc_table
+(
+    hza_context_t * hc
+);
+
+
 /* hza_lib_name *************************************************************/
 HZA_API char const * C41_CALL hza_lib_name ()
 {
@@ -612,6 +642,9 @@ static hza_error_t C41_CALL init_module
     hza_module_t * m = (hza_module_t *) hc->args[0];
     m->owner = hc;
     m->module_id = w->module_id_seed++;
+    m->block_count = 1;
+    m->block_unsealed = 1;
+    m->block_unused = 1;
     C41_DLIST_APPEND(w->unbound_module_list, m, links);
     D("inited module: ptr=$#G4p id=$Ui", m, m->module_id);
     return 0;
@@ -656,4 +689,217 @@ HZA_API hza_error_t C41_CALL hza_create_module
     return (0);
 }
 
+/* releaSE_MODULE ***********************************************************/
+static hza_error_t C41_CALL release_module
+(
+    hza_context_t * hc
+)
+{
+    hza_module_t * m = (hza_module_t *) hc->args[0];
+
+    ASSERT(m->owner == hc);
+    m->owner = NULL;
+    return 0;
+}
+
+/* hza_release_module *******************************************************/
+HZA_API hza_error_t C41_CALL hza_release_module
+(
+    hza_context_t * hc,
+    hza_module_t * m
+)
+{
+    hza_world_t * w = hc->world;
+    hza_error_t e;
+
+    hc->args[0] = (intptr_t) m;
+    e = run_locked(hc, release_module, w->module_mutex);
+
+    return e;
+}
+    
+/* realloc_table ************************************************************/
+static hza_error_t C41_CALL realloc_table
+(
+    hza_context_t * hc
+)
+{
+    hza_world_t * w = hc->world;
+    int mae;
+    mae = c41_ma_realloc_array(&w->mac.ma, (void * *) &hc->args[0],
+                               hc->args[1], hc->args[2], hc->args[3]);
+    if (mae)
+    {
+        E("failed reallocating table: ma error $Ui", mae);
+        return (hc->hza_error = HZAE_ALLOC);
+    }
+    return 0;
+}
+
+
+/* hza_add_proc *************************************************************/
+HZA_API hza_error_t C41_CALL hza_add_proc
+(
+    hza_context_t * hc,
+    hza_module_t * m
+)
+{
+    hza_world_t * w = hc->world;
+    uint32_t i;
+    hza_error_t e;
+
+    ASSERT(m->owner == hc);
+    if (m->proc_count == m->proc_limit)
+    {
+        hc->args[0] = (intptr_t) m->proc_table;
+        hc->args[1] = sizeof(hza_proc_t);
+        hc->args[2] = m->proc_limit << 1;
+        hc->args[3] = m->proc_limit;
+        e = run_locked(hc, realloc_table, w->module_mutex);
+        if (e)
+        {
+            E("failed reallocating proc table for module m$.4Hd: $s = $Ui",
+              m->module_id, hza_error_name(e), e);
+            return e;
+        }
+        m->proc_table = (hza_proc_t *) hc->args[0];
+        m->proc_limit <<= 1;
+        D("resized proc table for m$.4Hd to $Ui items", 
+          m->module_id, m->proc_limit);
+    }
+    i = m->proc_count++;
+
+    C41_VAR_ZERO(m->proc_table[i]);
+    hc->args[0] = i;
+    D("added proc: m$.4Hd.p$.4Hd", m->module_id, i);
+
+    return 0;
+}
+
+/* hza_add_block ************************************************************/
+HZA_API hza_error_t C41_CALL hza_add_block
+(
+    hza_context_t * hc,
+    hza_module_t * m
+)
+{
+    hza_world_t * w = hc->world;
+    uint32_t i;
+    hza_error_t e;
+
+    ASSERT(m->owner == hc);
+    if (m->block_count == m->block_limit)
+    {
+        hc->args[0] = (intptr_t) m->block_table;
+        hc->args[1] = sizeof(hza_block_t);
+        hc->args[2] = m->block_limit << 1;
+        hc->args[3] = m->block_limit;
+        e = run_locked(hc, realloc_table, w->module_mutex);
+        if (e)
+        {
+            E("failed reallocating block table for module m$.4Hd: $s = $Ui",
+              m->module_id, hza_error_name(e), e);
+            return e;
+        }
+        m->block_table = (hza_block_t *) hc->args[0];
+        m->block_limit <<= 1;
+        D("resized block table for m$.4Hd to $Ui items", 
+          m->module_id, m->block_limit);
+    }
+    i = m->block_count++;
+
+    C41_VAR_ZERO(m->block_table[i]);
+    hc->args[0] = i;
+    D("added block: m$.4Hd.b$.4Hd", m->module_id, i);
+
+    return 0;
+}
+
+/* hza_add_target ***********************************************************/
+HZA_API hza_error_t C41_CALL hza_add_target
+(
+    hza_context_t * hc,
+    hza_module_t * m,
+    uint32_t block_index
+)
+{
+    hza_world_t * w = hc->world;
+    uint32_t i;
+    hza_error_t e;
+
+    ASSERT(m->owner == hc);
+    if (m->target_count == m->target_limit)
+    {
+        hc->args[0] = (intptr_t) m->target_table;
+        hc->args[1] = sizeof(uint32_t);
+        hc->args[2] = m->target_limit << 1;
+        hc->args[3] = m->target_limit;
+        e = run_locked(hc, realloc_table, w->module_mutex);
+        if (e)
+        {
+            E("failed reallocating target table for module m$.4Hd: $s = $Ui",
+              m->module_id, hza_error_name(e), e);
+            return e;
+        }
+        m->target_table = (uint32_t *) hc->args[0];
+        m->target_limit <<= 1;
+        D("resized target table for m$.4Hd to $Ui items", 
+          m->module_id, m->target_limit);
+    }
+    i = m->target_count++;
+
+    m->target_table[i] = block_index;
+    hc->args[0] = i;
+    D("added target: m$.4Hd.t$.4Hd = b$.04Hd", m->module_id, i, block_index);
+
+    return 0;
+}
+
+/* hza_add_insn *************************************************************/
+HZA_API hza_error_t C41_CALL hza_add_insn
+(
+    hza_context_t * hc,
+    hza_module_t * m,
+    uint16_t opcode,
+    uint16_t a,
+    uint16_t b,
+    uint16_t c
+)
+{
+    hza_world_t * w = hc->world;
+    uint32_t i;
+    hza_error_t e;
+
+    ASSERT(m->owner == hc);
+    if (m->insn_count == m->insn_limit)
+    {
+        hc->args[0] = (intptr_t) m->insn_table;
+        hc->args[1] = sizeof(hza_insn_t);
+        hc->args[2] = m->insn_limit << 1;
+        hc->args[3] = m->insn_limit;
+        e = run_locked(hc, realloc_table, w->module_mutex);
+        if (e)
+        {
+            E("failed reallocating insn table for module m$.4Hd: $s = $Ui",
+              m->module_id, hza_error_name(e), e);
+            return e;
+        }
+        m->insn_table = (hza_insn_t *) hc->args[0];
+        m->insn_limit <<= 1;
+        D("resized insn table for m$.4Hd to $Ui items", 
+          m->module_id, m->insn_limit);
+    }
+    i = m->insn_count++;
+
+    m->insn_table[i].opcode = opcode;
+    m->insn_table[i].a = a;
+    m->insn_table[i].b = b;
+    m->insn_table[i].c = c;
+
+    hc->args[0] = i;
+    D("added insn: m$.4Hd.i$.4Hd = $w $w $w $w", 
+      m->module_id, i, opcode, a, b, c);
+
+    return 0;
+}
 
