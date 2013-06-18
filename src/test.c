@@ -1,5 +1,7 @@
 #include <hza.h>
 
+#define DO(_expr) if ((hze = (_expr))) { rc |= 1; break; } else ((void) 0)
+
 uint8_t test (c41_io_t * log_io, c41_ma_t * ma, c41_smt_t * smt)
 {
     uint8_t rc;
@@ -9,6 +11,7 @@ uint8_t test (c41_io_t * log_io, c41_ma_t * ma, c41_smt_t * smt)
     hza_module_t * m;
     //uint32_t apx;
     //uint32_t abx;
+    uint32_t bbx;
 
     rc = 0;
 
@@ -21,43 +24,38 @@ uint8_t test (c41_io_t * log_io, c41_ma_t * ma, c41_smt_t * smt)
         }
         if (c41_io_fmt(log_io, "* ma: $p\n", ma) < 0) { rc |= 2; break; }
 
-        hze = hza_init(&hcd, ma, smt, log_io, HZA_LL_DEBUG);
-        if (hze) { rc |= 1; break; }
+        DO(hza_init(&hcd, ma, smt, log_io, HZA_LL_DEBUG));
         inited = 1;
 
-        hze = hza_create_module(&hcd, &m);
-        if (hze) { rc |= 1; break; }
+        DO(hza_create_module(&hcd, &m));
 
         //apx = m->proc_count;
-        hze = hza_add_proc(&hcd, m);
-        if (hze) { rc |= 1; break; }
+        DO(hza_add_proc(&hcd, m));
 
         //abx = m->block_count;
-        hze = hza_add_block(&hcd, m);
+        DO(hza_add_block(&hcd, m));
 
-        hze = hza_add_insn(&hcd, m, HZAO_NOP, 0, 0, 0);
-        if (hze) { rc |= 1; break; }
+        bbx = m->block_count;
+        DO(hza_add_block(&hcd, m));
 
-        hze = hza_add_insn(&hcd, m, HZAO_ZXCONST_32, 0x00, 'H', 0);
-        if (hze) { rc |= 1; break; }
-        hze = hza_add_insn(&hcd, m, HZAO_ZXCONST_32, 0x20, 'e', 0);
-        if (hze) { rc |= 1; break; }
-        hze = hza_add_insn(&hcd, m, HZAO_ZXCONST_32, 0x40, 'l', 0);
-        if (hze) { rc |= 1; break; }
-        hze = hza_add_insn(&hcd, m, HZAO_ZXCONST_32, 0x60, 'l', 0);
-        if (hze) { rc |= 1; break; }
-        hze = hza_add_insn(&hcd, m, HZAO_ZXCONST_32, 0x80, 'o', 0);
-        if (hze) { rc |= 1; break; }
-        hze = hza_add_insn(&hcd, m, HZAO_ZXCONST_32, 0xA0, '!', 0);
-        if (hze) { rc |= 1; break; }
+        DO(hza_add_insn(&hcd, m, HZAO_NOP, 0, 0, 0));
+        DO(hza_add_insn(&hcd, m, HZAO_ZXCONST_32, 0x00, 'H', 0));
+        DO(hza_add_insn(&hcd, m, HZAO_ZXCONST_32, 0x20, 'e', 0));
+        DO(hza_add_insn(&hcd, m, HZAO_ZXCONST_32, 0x40, 'l', 0));
+        DO(hza_add_insn(&hcd, m, HZAO_ZXCONST_32, 0x60, 'o', 0));
+        DO(hza_add_insn(&hcd, m, HZAO_ZXCONST_32, 0x80, '!', 0));
+        DO(hza_add_insn(&hcd, m, HZAO_OUTPUT_DEBUG_CHAR, 0x00, 0, 0));
+        DO(hza_add_insn(&hcd, m, HZAO_OUTPUT_DEBUG_CHAR, 0x20, 0, 0));
+        DO(hza_add_insn(&hcd, m, HZAO_OUTPUT_DEBUG_CHAR, 0x40, 0, 0));
+        DO(hza_add_insn(&hcd, m, HZAO_OUTPUT_DEBUG_CHAR, 0x40, 0, 0));
+        DO(hza_add_insn(&hcd, m, HZAO_OUTPUT_DEBUG_CHAR, 0x60, 0, 0));
+        DO(hza_add_insn(&hcd, m, HZAO_OUTPUT_DEBUG_CHAR, 0x80, 0, 0));
+        DO(hza_add_target(&hcd, m, bbx));
 
-        hze = hza_add_proc(&hcd, m);
-        if (hze) { rc |= 1; break; }
-        hze = hza_add_proc(&hcd, m);
-        if (hze) { rc |= 1; break; }
+        DO(hza_add_proc(&hcd, m));
+        DO(hza_add_proc(&hcd, m));
 
-        hze = hza_release_module(&hcd, m);
-        if (hze) { rc |= 1; break; }
+        DO(hza_release_module(&hcd, m));
     }
     while (0);
     if (inited) hze = hza_finish(&hcd);
