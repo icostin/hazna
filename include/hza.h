@@ -48,7 +48,7 @@ enum hza_opcode_enum
     HZAO_CONST_128,
 
     /* zxconst-N rN:aaaa, zero_extend(bbbb | (cccc << 16)) */
-    HZAO_ZXCONST_1 = 8,
+    HZAO_ZXCONST_1,
     HZAO_ZXCONST_2,
     HZAO_ZXCONST_4,
     HZAO_ZXCONST_8,
@@ -57,7 +57,7 @@ enum hza_opcode_enum
     HZAO_ZXCONST_64,
     HZAO_ZXCONST_128,
     /* sxconst-N rN:aaaa, sign_extend(bbbb | (cccc << 16)) */
-    HZAO_SXCONST_1 = 8,
+    HZAO_SXCONST_1,
     HZAO_SXCONST_2,
     HZAO_SXCONST_4,
     HZAO_SXCONST_8,

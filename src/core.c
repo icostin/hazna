@@ -181,6 +181,44 @@ HZA_API char const * C41_CALL hza_error_name (hza_error_t e)
 #undef X
 }
 
+HZA_API char const * C41_CALL hza_opcode_name (uint16_t o)
+{
+#define X(_x) case _x: return #_x
+    switch (o)
+    {
+        X(HZAO_NOP);
+        X(HZAO_RETURN);
+        X(HZAO_OUTPUT_DEBUG_CHAR);
+        X(HZAO_CONST_1);
+        X(HZAO_CONST_2);
+        X(HZAO_CONST_4);
+        X(HZAO_CONST_8);
+        X(HZAO_CONST_16);
+        X(HZAO_CONST_32);
+        X(HZAO_CONST_64);
+        X(HZAO_CONST_128);
+        X(HZAO_ZXCONST_1);
+        X(HZAO_ZXCONST_2);
+        X(HZAO_ZXCONST_4);
+        X(HZAO_ZXCONST_8);
+        X(HZAO_ZXCONST_16);
+        X(HZAO_ZXCONST_32);
+        X(HZAO_ZXCONST_64);
+        X(HZAO_ZXCONST_128);
+        X(HZAO_SXCONST_1);
+        X(HZAO_SXCONST_2);
+        X(HZAO_SXCONST_4);
+        X(HZAO_SXCONST_8);
+        X(HZAO_SXCONST_16);
+        X(HZAO_SXCONST_32);
+        X(HZAO_SXCONST_64);
+        X(HZAO_SXCONST_128);
+
+    }
+    return "HZAO_UNKNOWN";
+#undef X
+}
+
 /* log_msg *******************************************************************/
 #define LME(...) do { \
     do { \
@@ -897,8 +935,8 @@ HZA_API hza_error_t C41_CALL hza_add_insn
     m->insn_table[i].c = c;
 
     hc->args[0] = i;
-    D("added insn: m$.4Hd.i$.4Hd = $w $w $w $w", 
-      m->module_id, i, opcode, a, b, c);
+    D("added insn: m$.4Hd.i$.4Hd = $s:$w a=$w b=$w c=$w", 
+      m->module_id, i, hza_opcode_name(opcode), opcode, a, b, c);
 
     return 0;
 }
