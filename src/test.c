@@ -51,6 +51,12 @@ uint8_t test (c41_io_t * log_io, c41_ma_t * ma, c41_smt_t * smt)
         DO(hza_add_insn(&hcd, m, HZAO_OUTPUT_DEBUG_CHAR, 0x60, 0, 0));
         DO(hza_add_insn(&hcd, m, HZAO_OUTPUT_DEBUG_CHAR, 0x80, 0, 0));
         DO(hza_add_target(&hcd, m, bbx));
+        DO(hza_seal_block(&hcd, m, 0));
+
+        DO(hza_add_insn(&hcd, m, HZAO_RETURN, 0, 0, 0));
+        DO(hza_seal_block(&hcd, m, 0));
+
+        DO(hza_seal_proc(&hcd, m));
 
         DO(hza_add_proc(&hcd, m));
         DO(hza_add_proc(&hcd, m));

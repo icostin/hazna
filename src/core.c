@@ -169,6 +169,7 @@ HZA_API char const * C41_CALL hza_error_name (hza_error_t e)
         X(HZAE_WORLD_FINISH);
         X(HZAE_LOG_MUTEX_INIT);
         X(HZAE_ALLOC);
+        X(HZAE_STATE);
 
         X(HZAF_BUG);
         X(HZAF_NO_CODE);
@@ -940,4 +941,54 @@ HZA_API hza_error_t C41_CALL hza_add_insn
 
     return 0;
 }
+
+/* hza_seal_block ***********************************************************/
+HZA_API hza_error_t C41_CALL hza_seal_block
+(
+    hza_context_t * hc,
+    hza_module_t * m,
+    uint32_t exc_target
+)
+{
+    uint32_t i;
+    i = m->block_unsealed;
+    if (i >= m->block_count)
+    {
+        E("cannot seal block: all blocks sealed in m$.4Xd", m->module_id);
+        return (hc->hza_error = HZAE_STATE);
+    }
+    m->block_table[i].insn_index = m->insn_unused;
+    m->block_table[i].insn_count = m->insn_count - m->insn_unused;
+    m->insn_unused = m->insn_count;
+    m->block_table[i].target_index = m->target_unused;
+    m->block_table[i].target_count = m->target_count - m->target_unused;
+    m->target_unused = m->target_count;
+    m->block_table[i].exc_target = exc_target;
+    m->block_table[i].proc_index = i;
+    m->block_unsealed = i + 1;
+    return 0;
+}
+
+/* hza_seal_proc ************************************************************/
+HZA_API hza_error_t C41_CALL hza_seal_proc
+(
+    hza_context_t * hc,
+    hza_module_t * m
+)
+{
+    uint32_t i;
+    i = m->proc_unsealed;
+    if (i >= m->proc_count)
+    {
+        E("cannot seal proc; all procs sealed in m$.4Xd", m->module_id);
+        return (hc->hza_error = HZAE_STATE);
+    }
+    m->proc_table[i].block_index = m->block_unused;
+    m->proc_table[i].block_count = m->block_count - m->block_unused;
+    m->block_unused = m->block_count;
+
+    /* todo: compute size of registers/locals from inspecting instructions */
+    return 0;
+}
+
 

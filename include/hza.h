@@ -20,6 +20,7 @@ enum hza_error_enum
     HZAE_WORLD_FINISH,
     HZAE_LOG_MUTEX_INIT,
     HZAE_ALLOC,
+    HZAE_STATE,
 
     HZA_FATAL = 0x80,
     HZAF_BUG,
