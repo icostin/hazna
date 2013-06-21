@@ -1,6 +1,9 @@
 #include <stdarg.h>
 #include "../include/hza.h"
 
+/* internal configurable constants ******************************************/
+#define DEFAULT_STACK_LIMIT 0x10
+
 /* macros *******************************************************************/
 #define L(_hc, _level, ...) \
     if ((_hc)->world->log_level >= (_level)) \
@@ -146,6 +149,18 @@ static hza_error_t C41_CALL realloc_table
     hza_context_t * hc
 );
 
+/* alloc_task ***************************************************************/
+static hza_error_t C41_CALL alloc_task
+(
+    hza_context_t * hc
+);
+/* free_task ****************************************************************/
+static hza_error_t C41_CALL free_task
+(
+    hza_context_t * hc
+);
+
+/* Function bodies **********************************************************/
 
 /* hza_lib_name *************************************************************/
 HZA_API char const * C41_CALL hza_lib_name ()
@@ -756,7 +771,7 @@ HZA_API hza_error_t C41_CALL hza_release_module
 
     return e;
 }
-    
+
 /* realloc_table ************************************************************/
 static hza_error_t C41_CALL realloc_table
 (
@@ -803,7 +818,7 @@ HZA_API hza_error_t C41_CALL hza_add_proc
         }
         m->proc_table = (hza_proc_t *) hc->args[0];
         m->proc_limit <<= 1;
-        D("resized proc table for m$.4Hd to $Ui items", 
+        D("resized proc table for m$.4Hd to $Ui items",
           m->module_id, m->proc_limit);
     }
     i = m->proc_count++;
@@ -842,7 +857,7 @@ HZA_API hza_error_t C41_CALL hza_add_block
         }
         m->block_table = (hza_block_t *) hc->args[0];
         m->block_limit <<= 1;
-        D("resized block table for m$.4Hd to $Ui items", 
+        D("resized block table for m$.4Hd to $Ui items",
           m->module_id, m->block_limit);
     }
     i = m->block_count++;
@@ -882,7 +897,7 @@ HZA_API hza_error_t C41_CALL hza_add_target
         }
         m->target_table = (uint32_t *) hc->args[0];
         m->target_limit <<= 1;
-        D("resized target table for m$.4Hd to $Ui items", 
+        D("resized target table for m$.4Hd to $Ui items",
           m->module_id, m->target_limit);
     }
     i = m->target_count++;
@@ -925,7 +940,7 @@ HZA_API hza_error_t C41_CALL hza_add_insn
         }
         m->insn_table = (hza_insn_t *) hc->args[0];
         m->insn_limit <<= 1;
-        D("resized insn table for m$.4Hd to $Ui items", 
+        D("resized insn table for m$.4Hd to $Ui items",
           m->module_id, m->insn_limit);
     }
     i = m->insn_count++;
@@ -936,7 +951,7 @@ HZA_API hza_error_t C41_CALL hza_add_insn
     m->insn_table[i].c = c;
 
     hc->args[0] = i;
-    D("added insn: m$.4Hd.i$.4Hd = $s:$w a=$w b=$w c=$w", 
+    D("added insn: m$.4Hd.i$.4Hd = $s:$w a=$w b=$w c=$w",
       m->module_id, i, hza_opcode_name(opcode), opcode, a, b, c);
 
     return 0;
@@ -991,4 +1006,96 @@ HZA_API hza_error_t C41_CALL hza_seal_proc
     return 0;
 }
 
+/* alloc_task ***************************************************************/
+static hza_error_t C41_CALL alloc_task
+(
+    hza_context_t * hc
+)
+{
+    hza_world_t * w = hc->world;
+    hza_task_t * t;
+    int mae;
+    hza_error_t e;
+
+    mae = C41_VAR_ALLOC1Z(&w->mac.ma, t);
+    hc->args[0] = (intptr_t) t;
+
+    if (mae)
+    {
+        E("failed allocating task (ma error $i)\n", mae);
+        hc->ma_error = mae;
+        return (hc->hza_error = HZAE_ALLOC);
+    }
+
+    t->stack_depth = DEFAULT_STACK_LIMIT;
+    mae = C41_VAR_ALLOCZ(&w->mac.ma, t->exec_stack, t->stack_depth);
+    if (mae)
+    {
+        E("failed allocating task execution stack (ma error $i)\n", mae);
+        hc->ma_error = mae;
+        e = free_task(hc);
+        if (e) return e;
+        return (hc->hza_error = HZAE_ALLOC);
+    }
+
+    return 0;
+}
+
+/* free_task ****************************************************************/
+static hza_error_t C41_CALL free_task
+(
+    hza_context_t * hc
+)
+{
+    hza_world_t * w = hc->world;
+    hza_task_t * t = (hza_task_t *) hc->args[0];
+    int mae;
+
+    if (!t) return 0;
+
+    if (t->exec_stack)
+    {
+        mae = C41_VAR_FREE(&w->mac.ma, t->exec_stack, t->stack_limit);
+        if (mae)
+        {
+            F("failed freeing task exec stack (ma error $i)\n", mae);
+            hc->ma_free_error = mae;
+            return (hc->hza_error = HZAF_FREE);
+        }
+    }
+
+    mae = C41_VAR_FREE1(&w->mac.ma, t);
+    if (mae)
+    {
+        F("error freeing task (ma error $i)\n", mae);
+        hc->ma_free_error = mae;
+        return (hc->hza_error =  HZAF_FREE);
+    }
+
+    return 0;
+}
+
+/* hza_create_task **********************************************************/
+HZA_API hza_error_t C41_CALL hza_create_task
+(
+    hza_context_t * hc,
+    hza_task_t * * tp
+)
+{
+    hza_world_t * w = hc->world;
+    hza_task_t * t;
+    hza_error_t e;
+
+    e = run_locked(hc, alloc_task, w->world_mutex);
+    if (e)
+    {
+        E("failed alocating task in locked state: $s = $i",
+          hza_error_name(e), e);
+        return e;
+    }
+
+    *tp = t = (hza_task_t *) hc->args[0];
+
+    return hc->hza_error = HZAF_NO_CODE;
+}
 

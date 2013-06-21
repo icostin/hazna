@@ -194,8 +194,11 @@ struct hza_world_s
 struct hza_task_s
 {
     c41_np_t links;
-    hza_context_t * runner; // the context currently running the task
+    hza_exec_state_t * exec_stack;
     hza_imported_module_t * imp_mod; // table of imported modules
+    hza_context_t * owner; // the context manipulating the task
+    uint_t stack_depth;
+    uint_t stack_limit;
     uint32_t imp_count; // number of imported modules
     uint32_t task_id; // unique id
     uint32_t ref_count; // how many contexts use this task
@@ -204,10 +207,10 @@ struct hza_task_s
 
 struct hza_exec_state_s
 {
-    uint16_t target_index;
-    uint16_t module_index;
-    uint32_t block_index;
-    uint16_t insn_index;
+    uint16_t target_index; // which exit from the block should it take
+    uint16_t module_index; // which module is execution in
+    uint32_t block_index; // which block is execution in
+    uint16_t insn_index; // which insn is execution at
     uint16_t reg_delta; // bits register data shifted
 };
 

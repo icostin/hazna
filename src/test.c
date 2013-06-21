@@ -58,9 +58,6 @@ uint8_t test (c41_io_t * log_io, c41_ma_t * ma, c41_smt_t * smt)
 
         DO(hza_seal_proc(&hcd, m));
 
-        DO(hza_add_proc(&hcd, m));
-        DO(hza_add_proc(&hcd, m));
-
         DO(hza_release_module(&hcd, m));
     }
     while (0);
