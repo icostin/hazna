@@ -1,7 +1,8 @@
 #include <hza.h>
 
-#define DO(_expr) if ((hze = (_expr))) { rc |= 1; break; } else ((void) 0)
+#define DO(_expr) if ((hze = (_expr))) { err_line = __LINE__; rc |= 1; break; } else ((void) 0)
 
+/* test *********************************************************************/
 uint8_t test (c41_io_t * log_io, c41_ma_t * ma, c41_smt_t * smt)
 {
     uint8_t rc;
@@ -9,9 +10,12 @@ uint8_t test (c41_io_t * log_io, c41_ma_t * ma, c41_smt_t * smt)
     hza_context_t hcd;
     char inited = 0;
     hza_module_t * m;
+    hza_module_t * lm;
+    hza_task_t * t;
     //uint32_t apx;
     //uint32_t abx;
     uint32_t bbx;
+    int err_line = 0;
 
     rc = 0;
 
@@ -58,10 +62,18 @@ uint8_t test (c41_io_t * log_io, c41_ma_t * ma, c41_smt_t * smt)
 
         DO(hza_seal_proc(&hcd, m));
 
+        DO(hza_load(&hcd, m, &lm));
         DO(hza_release_module(&hcd, m));
+
+        DO(hza_create_task(&hcd, &t));
     }
     while (0);
     if (inited) hze = hza_finish(&hcd);
+
+    if (rc)
+    {
+        c41_io_fmt(log_io, "error line: $i\n", err_line);
+    }
 
     return rc;
 }

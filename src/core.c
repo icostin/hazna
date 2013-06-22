@@ -129,6 +129,12 @@ static hza_error_t C41_CALL release_module
 (
     hza_context_t * hc
 );
+/* load_module **************************************************************/
+static hza_error_t C41_CALL load_module
+(
+    hza_context_t * hc
+);
+
 
 /* realloc_table ************************************************************/
 /**
@@ -156,6 +162,16 @@ static hza_error_t C41_CALL alloc_task
 );
 /* free_task ****************************************************************/
 static hza_error_t C41_CALL free_task
+(
+    hza_context_t * hc
+);
+/* init_task ****************************************************************/
+static hza_error_t C41_CALL init_task
+(
+    hza_context_t * hc
+);
+/* release_task *************************************************************/
+static hza_error_t C41_CALL release_task
 (
     hza_context_t * hc
 );
@@ -354,7 +370,7 @@ HZA_API hza_error_t C41_CALL hza_init
 {
     hza_error_t e;
     hza_world_t * w;
-    int mae, smte;
+    int mae, smte, qi;
 
     /* clear the context struct */
     C41_VAR_ZERO(*hc);
@@ -379,8 +395,11 @@ HZA_API hza_error_t C41_CALL hza_init
     w->context_count = 1;
     c41_dlist_init(&w->loaded_module_list);
     c41_dlist_init(&w->unbound_module_list);
-    c41_dlist_init(&w->task_list[HZA_TASK_READY]);
-    c41_dlist_init(&w->task_list[HZA_TASK_SUSPENED]);
+
+    for (qi = 0; qi < HZA_TASK_STATES; qi++)
+    {
+        c41_dlist_init(&w->task_list[qi]);
+    }
 
     /* init allocator; count allocs to detect leaks */
     c41_ma_counter_init(&w->mac, ma,
@@ -444,8 +463,10 @@ HZA_API hza_error_t C41_CALL hza_finish
     c41_smt_t * smt = w->smt;
     hza_module_t * m;
     hza_module_t * mn;
-    int mae, smte, cc, dirty;
+    hza_task_t * t;
+    int mae, smte, cc, dirty, qi;
     hza_error_t e;
+    c41_np_t * np;
 
     if ((w->init_state & HZA_INIT_WORLD_MUTEX))
     {
@@ -477,6 +498,28 @@ HZA_API hza_error_t C41_CALL hza_finish
     /* destroy the world */
     I("ending world $#G4p...", w);
 
+    /* destroy tasks */
+    for (qi = 0; qi < HZA_TASK_STATES; qi++)
+    {
+        for (np = w->task_list[qi].next; np != &w->task_list[qi];)
+        {
+            t = (hza_task_t *) np;
+            np = np->next;
+            hc->args[0] = (intptr_t) t;
+            e = free_task(hc);
+            if (e)
+            {
+                F("failed freeing task t$Ui: $s = $i", t->task_id,
+                  hza_error_name(e), e);
+                return e;
+            }
+        }
+    }
+
+    /* push loaded modules in the unbound list */
+    c41_dlist_extend(&w->unbound_module_list, &w->loaded_module_list, C41_NEXT);
+
+    /* destroy modules */
     for (m = (hza_module_t *) w->unbound_module_list.next;
          m != (hza_module_t *) &w->unbound_module_list;
          m = mn)
@@ -1006,6 +1049,46 @@ HZA_API hza_error_t C41_CALL hza_seal_proc
     return 0;
 }
 
+/* load_module **************************************************************/
+static hza_error_t C41_CALL load_module
+(
+    hza_context_t * hc
+)
+{
+    hza_world_t * w = hc->world;
+    hza_module_t * m = (hza_module_t *) hc->args[0];
+
+    /* TODO: check if m is a duplicate of some already loaded module and
+     * return that one in hc->args[0] */
+    c41_dlist_del(&m->links);
+    C41_DLIST_APPEND(w->loaded_module_list, m, links);
+    return 0;
+}
+
+/* hza_load *****************************************************************/
+HZA_API hza_error_t C41_CALL hza_load
+(
+    hza_context_t * hc,
+    hza_module_t * m,
+    hza_module_t * * mp
+)
+{
+    hza_world_t * w = hc->world;
+    hza_error_t e;
+
+    hc->args[0] = (intptr_t) m;
+    e = run_locked(hc, load_module, w->module_mutex);
+    if (e)
+    {
+        E("failed loading module m$Ui: $s = $i", m->module_id,
+          hza_error_name(e), e);
+        return e;
+    }
+    *mp = (hza_module_t *) hc->args[0];
+
+    return 0;
+}
+
 /* alloc_task ***************************************************************/
 static hza_error_t C41_CALL alloc_task
 (
@@ -1027,8 +1110,8 @@ static hza_error_t C41_CALL alloc_task
         return (hc->hza_error = HZAE_ALLOC);
     }
 
-    t->stack_depth = DEFAULT_STACK_LIMIT;
-    mae = C41_VAR_ALLOCZ(&w->mac.ma, t->exec_stack, t->stack_depth);
+    t->stack_limit = DEFAULT_STACK_LIMIT;
+    mae = C41_VAR_ALLOCZ(&w->mac.ma, t->exec_stack, t->stack_limit);
     if (mae)
     {
         E("failed allocating task execution stack (ma error $i)\n", mae);
@@ -1075,6 +1158,24 @@ static hza_error_t C41_CALL free_task
     return 0;
 }
 
+/* init_task ****************************************************************/
+static hza_error_t C41_CALL init_task
+(
+    hza_context_t * hc
+)
+{
+    hza_world_t * w = hc->world;
+    hza_task_t * t = (hza_task_t *) hc->args[0];
+
+    t->owner = hc;
+    t->task_id = w->task_id_seed++;
+    // t->ref_count = 1;
+    t->state = HZA_TASK_SUSPENDED;
+    C41_DLIST_APPEND(w->task_list[HZA_TASK_SUSPENDED], t, links);
+
+    return 0;
+}
+
 /* hza_create_task **********************************************************/
 HZA_API hza_error_t C41_CALL hza_create_task
 (
@@ -1084,7 +1185,7 @@ HZA_API hza_error_t C41_CALL hza_create_task
 {
     hza_world_t * w = hc->world;
     hza_task_t * t;
-    hza_error_t e;
+    hza_error_t e, fe;
 
     e = run_locked(hc, alloc_task, w->world_mutex);
     if (e)
@@ -1096,6 +1197,56 @@ HZA_API hza_error_t C41_CALL hza_create_task
 
     *tp = t = (hza_task_t *) hc->args[0];
 
-    return hc->hza_error = HZAF_NO_CODE;
+    e = run_locked(hc, init_task, w->task_mutex);
+    if (e)
+    {
+        E("failed initialising task (with module mutex locked): $s = $i",
+          hza_error_name(e), e);
+        fe = run_locked(hc, free_task, w->task_mutex);
+        if (fe)
+        {
+            F("failed freeing task after its init failed: $s = $i",
+              hza_error_name(fe), fe);
+            return fe;
+        }
+        return e;
+    }
+
+    return 0;
+}
+
+/* release_task *************************************************************/
+static hza_error_t C41_CALL release_task
+(
+    hza_context_t * hc
+)
+{
+    //hza_world_t * w = hc->world;
+    hza_task_t * t = (hza_task_t *) hc->args[0];
+
+    t->owner = NULL;
+    return 0;
+}
+
+/* hza_release_task *********************************************************/
+HZA_API hza_error_t C41_CALL hza_release_task
+(
+    hza_context_t * hc,
+    hza_task_t * t
+)
+{
+    hza_world_t * w = hc->world;
+    hza_error_t e;
+
+    ASSERT(t->owner == hc);
+    hc->args[0] = (intptr_t) t;
+    e = run_locked(hc, release_task, w->task_mutex);
+    if (e)
+    {
+        E("failed releasing task in locked state: $s = $i",
+          hza_error_name(e), e);
+        return e;
+    }
+    return 0;
 }
 

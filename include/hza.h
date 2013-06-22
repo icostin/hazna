@@ -77,11 +77,12 @@ enum hza_opcode_enum
 #define HZA_LL_DEBUG 5
 
 /* task states */
-#define HZA_TASK_READY 0
-#define HZA_TASK_SUSPENED 1
-#define HZA_TASK_STATES 2
+#define HZA_TASK_RUNNING 0
+#define HZA_TASK_READY 1
+#define HZA_TASK_SUSPENDED 2
+#define HZA_TASK_STATES 3
 
-#define HZA_MAX_PROC 0x1000000 // 16M procs per module tops!
+#define HZA_MAX_PROC 0x1000000 // 16M procs per module tops! or else...
 
 /* hza_error_t **************************************************************/
 /**
@@ -201,7 +202,8 @@ struct hza_task_s
     uint_t stack_limit;
     uint32_t imp_count; // number of imported modules
     uint32_t task_id; // unique id
-    uint32_t ref_count; // how many contexts use this task
+    // uint32_t ref_count; // how many contexts use this task
+    uint8_t state; // which queue this task is in
     uint8_t kill_req; // kill requested but task is running
 };
 
@@ -459,13 +461,8 @@ HZA_API hza_error_t C41_CALL hza_create_task
     hza_task_t * * tp
 );
 
-/* hza_deref_task ***********************************************************/
-/**
- * Bla.
- * Returns:
- *  0 = HZA_OK                  success
- **/
-HZA_API hza_error_t C41_CALL hza_deref_task
+/* hza_release_task *********************************************************/
+HZA_API hza_error_t C41_CALL hza_release_task
 (
     hza_context_t * hc,
     hza_task_t * t
@@ -503,11 +500,21 @@ HZA_API hza_error_t C41_CALL hza_enter
 /**
  * Prepares a task to be executed in the given context.
  * This sets task's runner to current context and removes the task from
- * whatever queue is in.
+ * whatever queue is in and adds it to RUNNING
  * Returns:
  *  0 = HZA_OK                  success
  **/
 HZA_API hza_error_t C41_CALL hza_activate
+(
+    hza_context_t * hc,
+    hza_task_t * t
+);
+
+/* hza_deactivate ***********************************************************/
+/**
+ * moves task from running into ready queue.
+ **/
+HZA_API hza_error_t C41_CALL hza_deactivate
 (
     hza_context_t * hc,
     hza_task_t * t
