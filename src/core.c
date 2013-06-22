@@ -1250,3 +1250,42 @@ HZA_API hza_error_t C41_CALL hza_release_task
     return 0;
 }
 
+/* activate_task ************************************************************/
+static hza_error_t C41_CALL activate_task
+(
+    hza_context_t * hc
+)
+{
+    hza_world_t * w = hc->world;
+    hza_task_t * t = (hza_task_t *) hc->args[0];
+    c41_dlist_del(&t->links);
+    C41_DLIST_APPEND(w->task_list[HZA_TASK_RUNNING], t, links);
+    t->state = HZA_TASK_RUNNING;
+    hc->active_task = t;
+
+    return 0;
+}
+
+/* hza_activate *************************************************************/
+HZA_API hza_error_t C41_CALL hza_activate
+(
+    hza_context_t * hc,
+    hza_task_t * t
+)
+{
+    hza_world_t * w = hc->world;
+    hza_error_t e;
+
+    ASSERT(hc->active_task == NULL);
+    hc->args[0] = (intptr_t) t;
+
+    e = run_locked(hc, activate_task, w->task_mutex);
+    if (e)
+    {
+        E("failed activating task in locked state: $s = $i",
+          hza_error_name(e), e);
+        return e;
+    }
+    return 0;
+}
+

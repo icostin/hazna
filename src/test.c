@@ -66,6 +66,7 @@ uint8_t test (c41_io_t * log_io, c41_ma_t * ma, c41_smt_t * smt)
         DO(hza_release_module(&hcd, m));
 
         DO(hza_create_task(&hcd, &t));
+        DO(hza_activate(&hcd, t));
     }
     while (0);
     if (inited) hze = hza_finish(&hcd);

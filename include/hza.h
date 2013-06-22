@@ -151,6 +151,7 @@ typedef struct hza_insn_s                       hza_insn_t;
 struct hza_context_s
 {
     hza_world_t * world;
+    hza_task_t * active_task;
     uint_t ma_error;
     uint_t ma_free_error;
     uint_t smt_error;
