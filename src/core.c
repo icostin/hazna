@@ -3,6 +3,7 @@
 
 /* internal configurable constants ******************************************/
 #define DEFAULT_STACK_LIMIT 0x10
+#define ABSOLUTE_STACK_LIMIT 0x1000
 
 /* macros *******************************************************************/
 #define L(_hc, _level, ...) \
@@ -201,6 +202,8 @@ HZA_API char const * C41_CALL hza_error_name (hza_error_t e)
         X(HZAE_LOG_MUTEX_INIT);
         X(HZAE_ALLOC);
         X(HZAE_STATE);
+        X(HZAE_STACK_LIMIT);
+        X(HZAE_PROC_INDEX);
 
         X(HZAF_BUG);
         X(HZAF_NO_CODE);
@@ -1287,5 +1290,61 @@ HZA_API hza_error_t C41_CALL hza_activate
         return e;
     }
     return 0;
+}
+
+/* hza_enter ****************************************************************/
+HZA_API hza_error_t C41_CALL hza_enter
+(
+    hza_context_t * hc,
+    uint_t module_index,
+    uint32_t proc_index
+)
+{
+    hza_world_t * w = hc->world;
+    hza_task_t * t = hc->active_task;
+    hza_error_t e;
+    hza_imported_module_t * im;
+    hza_module_t * m;
+    hza_exec_state_t * es;
+    uint_t depth;
+
+    depth = t->stack_depth;
+    if (depth == t->stack_limit)
+    {
+        if (t->stack_limit >= ABSOLUTE_STACK_LIMIT)
+        {
+            E("reached absolute stack limit in task t$Ui", t->task_id);
+            return (hc->hza_error = HZAE_STACK_LIMIT);
+        }
+
+        hc->args[0] = (intptr_t) t->exec_stack;
+        hc->args[1] = sizeof(hza_exec_state_t);
+        hc->args[2] = t->stack_limit << 1;
+        hc->args[3] = t->stack_limit;
+        e = run_locked(hc, realloc_table, w->world_mutex);
+        if (e)
+        {
+            E("failed to extend exec stack for task t$Ui: $s = $i", 
+              t->task_id, hza_error_name(e), e);
+            return e;
+        }
+        t->exec_stack = (hza_exec_state_t *) hc->args[0];
+        t->stack_limit <<= 1;
+    }
+    im = &t->imp_mod[module_index];
+    m = im->module;
+    if (proc_index >= m->proc_count)
+    {
+        E("requested to enter bad proc index ($Ui >= $Ui) from m$Ui",
+          proc_index, m->proc_count, m->module_id);
+        return hc->hza_error = HZAE_PROC_INDEX;
+    }
+    es = t->exec_stack + depth;
+    es->target_index = 0;
+    es->module_index = module_index;
+    es->block_index = m->proc_table[proc_index].block_index;
+    es->insn_index = 0;
+
+    return hc->hza_error = HZAF_NO_CODE;
 }
 

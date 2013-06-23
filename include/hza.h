@@ -21,6 +21,8 @@ enum hza_error_enum
     HZAE_LOG_MUTEX_INIT,
     HZAE_ALLOC,
     HZAE_STATE,
+    HZAE_STACK_LIMIT,
+    HZAE_PROC_INDEX,
 
     HZA_FATAL = 0x80,
     HZAF_BUG,
@@ -223,7 +225,7 @@ struct hza_imported_module_s
                                    are mapped in the task's memory space */
     hza_module_t * module;
     hza_task_t * task;
-    uint32_t index; // the index in task's module table
+    //uint32_t index; // the index in task's module table
 };
 
 struct hza_module_s
@@ -484,19 +486,6 @@ HZA_API hza_error_t C41_CALL hza_kill
     hza_task_t * t
 );
 
-/* hza_enter ****************************************************************/
-/**
- * Bla.
- * Returns:
- *  0 = HZA_OK                  success
- **/
-HZA_API hza_error_t C41_CALL hza_enter
-(
-    hza_context_t * hc,
-    uint_t module_index,
-    uint32_t block_index
-);
-
 /* hza_activate *************************************************************/
 /**
  * Prepares a task to be executed in the given context.
@@ -519,6 +508,19 @@ HZA_API hza_error_t C41_CALL hza_deactivate
 (
     hza_context_t * hc,
     hza_task_t * t
+);
+
+/* hza_enter ****************************************************************/
+/**
+ * Bla.
+ * Returns:
+ *  0 = HZA_OK                  success
+ **/
+HZA_API hza_error_t C41_CALL hza_enter
+(
+    hza_context_t * hc,
+    uint_t module_index,
+    uint32_t proc_index
 );
 
 /* hza_run ******************************************************************/
