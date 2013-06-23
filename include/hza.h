@@ -199,11 +199,12 @@ struct hza_task_s
 {
     c41_np_t links;
     hza_exec_state_t * exec_stack;
-    hza_imported_module_t * imp_mod; // table of imported modules
+    hza_imported_module_t * imp_table; // table of imported modules
     hza_context_t * owner; // the context manipulating the task
     uint_t stack_depth;
     uint_t stack_limit;
     uint32_t imp_count; // number of imported modules
+    uint32_t imp_limit;
     uint32_t task_id; // unique id
     // uint32_t ref_count; // how many contexts use this task
     uint8_t state; // which queue this task is in
@@ -440,15 +441,15 @@ HZA_API hza_error_t C41_CALL hza_load
 
 /* hza_import ***************************************************************/
 /**
- * Imports a module in a task.
+ * Imports a module in the active task.
  * Returns:
  *  0 = HZA_OK                  success
  */
 HZA_API hza_error_t C41_CALL hza_import
 (
     hza_context_t * hc,
-    hza_task_t * t,
-    hza_module_t * m
+    hza_module_t * m,
+    uint64_t anchor
 );
 
 /* hza_create_task **********************************************************/

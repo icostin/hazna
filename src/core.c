@@ -4,6 +4,7 @@
 /* internal configurable constants ******************************************/
 #define DEFAULT_STACK_LIMIT 0x10
 #define ABSOLUTE_STACK_LIMIT 0x1000
+#define INIT_IMPORT_LIMIT 2
 
 /* macros *******************************************************************/
 #define L(_hc, _level, ...) \
@@ -176,7 +177,11 @@ static hza_error_t C41_CALL release_task
 (
     hza_context_t * hc
 );
-
+/* inc_import_count *********************************************************/
+static hza_error_t inc_import_count
+(
+    hza_context_t * hc
+);
 /* Function bodies **********************************************************/
 
 /* hza_lib_name *************************************************************/
@@ -1124,6 +1129,17 @@ static hza_error_t C41_CALL alloc_task
         return (hc->hza_error = HZAE_ALLOC);
     }
 
+    t->imp_limit = INIT_IMPORT_LIMIT;
+    mae = C41_VAR_ALLOC(&w->mac.ma, t->imp_table, t->imp_limit);
+    if (mae)
+    {
+        E("failed allocating task import module table (ma error $i)\n", mae);
+        hc->ma_error = mae;
+        e = free_task(hc);
+        if (e) return e;
+        return (hc->hza_error = HZAE_ALLOC);
+    }
+
     return 0;
 }
 
@@ -1138,6 +1154,17 @@ static hza_error_t C41_CALL free_task
     int mae;
 
     if (!t) return 0;
+
+    if (t->imp_table)
+    {
+        mae = C41_VAR_FREE(&w->mac.ma, t->imp_table, t->imp_limit);
+        if (mae)
+        {
+            F("failed freeing task import table (ma error $i)\n", mae);
+            hc->ma_free_error = mae;
+            return (hc->hza_error = HZAF_FREE);
+        }
+    }
 
     if (t->exec_stack)
     {
@@ -1280,6 +1307,7 @@ HZA_API hza_error_t C41_CALL hza_activate
     hza_error_t e;
 
     ASSERT(hc->active_task == NULL);
+    ASSERT(t->owner == hc);
     hc->args[0] = (intptr_t) t;
 
     e = run_locked(hc, activate_task, w->task_mutex);
@@ -1308,6 +1336,15 @@ HZA_API hza_error_t C41_CALL hza_enter
     hza_exec_state_t * es;
     uint_t depth;
 
+    im = &t->imp_table[module_index];
+    m = im->module;
+    if (proc_index >= m->proc_count)
+    {
+        E("requested to enter bad proc index ($Ui >= $Ui) from m$Ui",
+          proc_index, m->proc_count, m->module_id);
+        return hc->hza_error = HZAE_PROC_INDEX;
+    }
+
     depth = t->stack_depth;
     if (depth == t->stack_limit)
     {
@@ -1324,27 +1361,77 @@ HZA_API hza_error_t C41_CALL hza_enter
         e = run_locked(hc, realloc_table, w->world_mutex);
         if (e)
         {
-            E("failed to extend exec stack for task t$Ui: $s = $i", 
+            E("failed to extend exec stack for task t$Ui: $s = $i",
               t->task_id, hza_error_name(e), e);
             return e;
         }
         t->exec_stack = (hza_exec_state_t *) hc->args[0];
         t->stack_limit <<= 1;
     }
-    im = &t->imp_mod[module_index];
-    m = im->module;
-    if (proc_index >= m->proc_count)
-    {
-        E("requested to enter bad proc index ($Ui >= $Ui) from m$Ui",
-          proc_index, m->proc_count, m->module_id);
-        return hc->hza_error = HZAE_PROC_INDEX;
-    }
     es = t->exec_stack + depth;
     es->target_index = 0;
     es->module_index = module_index;
     es->block_index = m->proc_table[proc_index].block_index;
     es->insn_index = 0;
+    t->stack_depth++;
 
     return hc->hza_error = HZAF_NO_CODE;
+}
+
+/* inc_import_count *********************************************************/
+static hza_error_t inc_import_count
+(
+    hza_context_t * hc
+)
+{
+    hza_module_t * m = (hza_module_t *) hc->args[0];
+    m->import_count++;
+    return 0;
+}
+
+/* hza_import ***************************************************************/
+HZA_API hza_error_t C41_CALL hza_import
+(
+    hza_context_t * hc,
+    hza_module_t * m,
+    uint64_t anchor
+)
+{
+    hza_world_t * w = hc->world;
+    hza_task_t * t = hc->active_task;
+    hza_error_t e;
+    hza_imported_module_t * im;
+    ASSERT(t != NULL);
+
+    if (t->imp_count == t->imp_limit)
+    {
+        hc->args[0] = (intptr_t) t->imp_table;
+        hc->args[1] = sizeof(hza_imported_module_t);
+        hc->args[2] = t->imp_limit << 1;
+        hc->args[3] = t->imp_limit;
+        e = run_locked(hc, realloc_table, w->world_mutex);
+        if (e)
+        {
+            E("failed resizing import table for t$Ui", t->task_id);
+            return e;
+        }
+        t->imp_table = (hza_imported_module_t *) hc->args[0];
+        t->imp_limit <<= 1;
+    }
+
+    hc->args[0] = (intptr_t) m;
+    e = run_locked(hc, inc_import_count, w->module_mutex);
+    if (e)
+    {
+        F("failed working with module mutex: $s = $i", hza_error_name(e), e);
+        return e;
+    }
+
+    im = &t->imp_table[t->imp_count++];
+    im->anchor = anchor;
+    im->module = m;
+    im->task = t;
+
+    return 0;
 }
 
