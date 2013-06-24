@@ -32,16 +32,19 @@ enum hza_error_enum
     HZAF_WORLD_FREE,
     HZAF_FREE,
     HZAF_ALLOC,
+    HZAF_OPCODE, // unsupported opcode
 };
 
 enum hza_opcode_enum
 {
     HZAO_NOP = 0,
     HZAO_RETURN,
-    HZAO_OUTPUT_DEBUG_CHAR, /* output-debug-char r32:aaaa */
+
+    HZAO__A_REG = 0x20,
+    HZAO_OUTPUT_DEBUG_CHAR_32 = HZAO__A_REG + 5, /* output-debug-char r32:aaaa */
 
     /* const-N  rN:aaaa, CONST_POOL:(bbbb | (cccc << 16)) */
-    HZAO_CONST_1 = 8,
+    HZAO_CONST_1 = HZAO__A_REG + 8,
     HZAO_CONST_2,
     HZAO_CONST_4,
     HZAO_CONST_8,
@@ -513,7 +516,7 @@ HZA_API hza_error_t C41_CALL hza_deactivate
 
 /* hza_enter ****************************************************************/
 /**
- * Bla.
+ * Pushes the entry point of a proc in the call stack of the active task.
  * Returns:
  *  0 = HZA_OK                  success
  **/
@@ -533,8 +536,8 @@ HZA_API hza_error_t C41_CALL hza_enter
 HZA_API hza_error_t C41_CALL hza_run
 (
     hza_context_t * hc,
-    int insn_count,
-    int call_level
+    uint_t iter_limit,
+    uint_t call_level
 );
 
 #endif /* _HZA_H_ */

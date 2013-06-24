@@ -12,7 +12,7 @@ uint8_t test (c41_io_t * log_io, c41_ma_t * ma, c41_smt_t * smt)
     hza_module_t * m;
     hza_module_t * lm;
     hza_task_t * t;
-    //uint32_t apx;
+    uint32_t apx;
     //uint32_t abx;
     uint32_t bbx;
     int err_line = 0;
@@ -33,7 +33,7 @@ uint8_t test (c41_io_t * log_io, c41_ma_t * ma, c41_smt_t * smt)
 
         DO(hza_create_module(&hcd, &m));
 
-        //apx = m->proc_count;
+        apx = m->proc_count;
         DO(hza_add_proc(&hcd, m));
 
         //abx = m->block_count;
@@ -48,12 +48,12 @@ uint8_t test (c41_io_t * log_io, c41_ma_t * ma, c41_smt_t * smt)
         DO(hza_add_insn(&hcd, m, HZAO_ZXCONST_32, 0x40, 'l', 0));
         DO(hza_add_insn(&hcd, m, HZAO_ZXCONST_32, 0x60, 'o', 0));
         DO(hza_add_insn(&hcd, m, HZAO_ZXCONST_32, 0x80, '!', 0));
-        DO(hza_add_insn(&hcd, m, HZAO_OUTPUT_DEBUG_CHAR, 0x00, 0, 0));
-        DO(hza_add_insn(&hcd, m, HZAO_OUTPUT_DEBUG_CHAR, 0x20, 0, 0));
-        DO(hza_add_insn(&hcd, m, HZAO_OUTPUT_DEBUG_CHAR, 0x40, 0, 0));
-        DO(hza_add_insn(&hcd, m, HZAO_OUTPUT_DEBUG_CHAR, 0x40, 0, 0));
-        DO(hza_add_insn(&hcd, m, HZAO_OUTPUT_DEBUG_CHAR, 0x60, 0, 0));
-        DO(hza_add_insn(&hcd, m, HZAO_OUTPUT_DEBUG_CHAR, 0x80, 0, 0));
+        DO(hza_add_insn(&hcd, m, HZAO_OUTPUT_DEBUG_CHAR_32, 0x00, 0, 0));
+        DO(hza_add_insn(&hcd, m, HZAO_OUTPUT_DEBUG_CHAR_32, 0x20, 0, 0));
+        DO(hza_add_insn(&hcd, m, HZAO_OUTPUT_DEBUG_CHAR_32, 0x40, 0, 0));
+        DO(hza_add_insn(&hcd, m, HZAO_OUTPUT_DEBUG_CHAR_32, 0x40, 0, 0));
+        DO(hza_add_insn(&hcd, m, HZAO_OUTPUT_DEBUG_CHAR_32, 0x60, 0, 0));
+        DO(hza_add_insn(&hcd, m, HZAO_OUTPUT_DEBUG_CHAR_32, 0x80, 0, 0));
         DO(hza_add_target(&hcd, m, bbx));
         DO(hza_seal_block(&hcd, m, 0));
 
@@ -67,6 +67,10 @@ uint8_t test (c41_io_t * log_io, c41_ma_t * ma, c41_smt_t * smt)
 
         DO(hza_create_task(&hcd, &t));
         DO(hza_activate(&hcd, t));
+
+        DO(hza_import(&hcd, lm, 0x123456789ABCDEF0));
+        DO(hza_enter(&hcd, lm->module_id, apx));
+        DO(hza_run(&hcd, 1000, 0));
     }
     while (0);
     if (inited) hze = hza_finish(&hcd);

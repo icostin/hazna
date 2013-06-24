@@ -182,6 +182,15 @@ static hza_error_t inc_import_count
 (
     hza_context_t * hc
 );
+/* insn_reg_bits ************************************************************/
+/**
+ * Computes the minimum number of bits in the register space to allow running
+ * the given instruction.
+ */
+static uint_t insn_reg_bits
+(
+    hza_insn_t * insn
+);
 /* Function bodies **********************************************************/
 
 /* hza_lib_name *************************************************************/
@@ -228,7 +237,7 @@ HZA_API char const * C41_CALL hza_opcode_name (uint16_t o)
     {
         X(HZAO_NOP);
         X(HZAO_RETURN);
-        X(HZAO_OUTPUT_DEBUG_CHAR);
+        X(HZAO_OUTPUT_DEBUG_CHAR_32);
         X(HZAO_CONST_1);
         X(HZAO_CONST_2);
         X(HZAO_CONST_4);
@@ -1035,6 +1044,21 @@ HZA_API hza_error_t C41_CALL hza_seal_block
     return 0;
 }
 
+/* insn_reg_bits ************************************************************/
+static uint_t insn_reg_bits
+(
+    hza_insn_t * insn
+)
+{
+    switch (insn->opcode >> 5)
+    {
+    case HZAO__A_REG >> 5:
+        return insn->a + (1 << (insn->opcode & 7));
+    default:
+        return 0;
+    }
+}
+
 /* hza_seal_proc ************************************************************/
 HZA_API hza_error_t C41_CALL hza_seal_proc
 (
@@ -1042,7 +1066,8 @@ HZA_API hza_error_t C41_CALL hza_seal_proc
     hza_module_t * m
 )
 {
-    uint32_t i;
+    uint32_t i, j, k;
+    uint_t rs, irs;
     i = m->proc_unsealed;
     if (i >= m->proc_count)
     {
@@ -1053,7 +1078,22 @@ HZA_API hza_error_t C41_CALL hza_seal_proc
     m->proc_table[i].block_count = m->block_count - m->block_unused;
     m->block_unused = m->block_count;
 
-    /* todo: compute size of registers/locals from inspecting instructions */
+    for (j = m->proc_table[i].block_index; j < m->block_count; ++j)
+    {
+        m->block_table[j].proc_index = i;
+        for (rs = k = 0; k < m->block_table[j].insn_count; ++k)
+        {
+            irs = insn_reg_bits(m->insn_table + m->block_table[j].insn_index 
+                                + k);
+            if (rs < irs) rs = irs;
+        }
+    }
+    rs = (rs + 0x7F) & 0xFF80;
+    m->proc_table[i].reg_size = rs;
+
+    D("sealed m$.4Hd.p$.4Hd: b$.4Hd...b$.4Hd reg_size=$Xd", m->module_id, i,
+      m->proc_table[i].block_index, m->block_count - 1, rs);
+
     return 0;
 }
 
@@ -1374,8 +1414,10 @@ HZA_API hza_error_t C41_CALL hza_enter
     es->block_index = m->proc_table[proc_index].block_index;
     es->insn_index = 0;
     t->stack_depth++;
+    D("entering m$.4d.p$.4d (b$.4Hd)", 
+      module_index, proc_index, es->block_index);
 
-    return hc->hza_error = HZAF_NO_CODE;
+    return 0;
 }
 
 /* inc_import_count *********************************************************/
@@ -1431,6 +1473,69 @@ HZA_API hza_error_t C41_CALL hza_import
     im->anchor = anchor;
     im->module = m;
     im->task = t;
+    D("imported m$Ui in t$Ui (anchor = $Xq)", m->module_id, t->task_id, anchor);
+
+    return 0;
+}
+
+/* hza_run ******************************************************************/
+HZA_API hza_error_t C41_CALL hza_run
+(
+    hza_context_t * hc,
+    uint_t iter_limit,
+    uint_t call_level
+)
+{
+    hza_task_t * t = hc->active_task;
+    hza_imported_module_t * im;
+    hza_module_t * m;
+    hza_block_t * b;
+    hza_exec_state_t * es;
+    //hza_error_t e;
+    hza_insn_t * insn;
+    uint_t depth;
+    uint_t i, iter;
+    uint_t target_index, block_index, insn_index, insn_count;
+
+    ASSERT(t != NULL);
+
+    depth = t->stack_depth;
+    if (depth <= call_level) return 0;
+    es = &t->exec_stack[depth - 1];
+
+    im = t->imp_table + es->module_index;
+    m = im->module;
+
+    block_index = es->block_index;
+    b = m->block_table + block_index;
+    target_index = es->target_index;
+    insn_index = b->insn_index + es->insn_index;
+    for (iter = 0; iter < iter_limit; )
+    {
+        insn_count = b->insn_index + b->insn_count;
+        for (i = insn_index, insn = m->insn_table + i;
+             i < insn_count; 
+             ++i, ++insn)
+        {
+            D("m$Ui:p$.4Hd:b$.2Hd:i$.2Hd: $s($Xw)", 
+              m->module_id, b->proc_index, block_index, i - b->insn_index,
+              hza_opcode_name(insn->opcode), insn->opcode);
+            switch (insn->opcode)
+            {
+            case HZAO_NOP:
+                break;
+            default:
+                F("unsupported opcode: $s($Xw)", 
+                  hza_opcode_name(insn->opcode), insn->opcode);
+                return (hc->hza_error = HZAF_OPCODE);
+            }
+        }
+        /* reached end of block: select the new block */
+        iter += i - insn_index;
+        block_index = m->target_table[b->target_index + target_index];
+        b = m->block_table + block_index;
+        insn_index = b->insn_index;
+    }
 
     return 0;
 }
