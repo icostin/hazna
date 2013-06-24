@@ -14,7 +14,7 @@ uint8_t test (c41_io_t * log_io, c41_ma_t * ma, c41_smt_t * smt)
     hza_task_t * t;
     uint32_t apx;
     //uint32_t abx;
-    uint32_t bbx;
+    //uint32_t bbx;
     int err_line = 0;
 
     rc = 0;
@@ -39,8 +39,8 @@ uint8_t test (c41_io_t * log_io, c41_ma_t * ma, c41_smt_t * smt)
         //abx = m->block_count;
         DO(hza_add_block(&hcd, m));
 
-        bbx = m->block_count;
-        DO(hza_add_block(&hcd, m));
+        // bbx = m->block_count;
+        // DO(hza_add_block(&hcd, m));
 
         DO(hza_add_insn(&hcd, m, HZAO_NOP, 0, 0, 0));
         DO(hza_add_insn(&hcd, m, HZAO_ZXCONST_32, 0x00, 'H', 0));
@@ -54,11 +54,12 @@ uint8_t test (c41_io_t * log_io, c41_ma_t * ma, c41_smt_t * smt)
         DO(hza_add_insn(&hcd, m, HZAO_OUTPUT_DEBUG_CHAR_32, 0x40, 0, 0));
         DO(hza_add_insn(&hcd, m, HZAO_OUTPUT_DEBUG_CHAR_32, 0x60, 0, 0));
         DO(hza_add_insn(&hcd, m, HZAO_OUTPUT_DEBUG_CHAR_32, 0x80, 0, 0));
-        DO(hza_add_target(&hcd, m, bbx));
+        //DO(hza_add_target(&hcd, m, bbx));
+        DO(hza_add_target(&hcd, m, 0));
         DO(hza_seal_block(&hcd, m, 0));
 
-        DO(hza_add_insn(&hcd, m, HZAO_RETURN, 0, 0, 0));
-        DO(hza_seal_block(&hcd, m, 0));
+        // DO(hza_add_insn(&hcd, m, HZAO_RETURN, 0, 0, 0));
+        // DO(hza_seal_block(&hcd, m, 0));
 
         DO(hza_seal_proc(&hcd, m));
 
@@ -69,7 +70,7 @@ uint8_t test (c41_io_t * log_io, c41_ma_t * ma, c41_smt_t * smt)
         DO(hza_activate(&hcd, t));
 
         DO(hza_import(&hcd, lm, 0x123456789ABCDEF0));
-        DO(hza_enter(&hcd, lm->module_id, apx));
+        DO(hza_enter(&hcd, lm->module_id, apx, 0));
         DO(hza_run(&hcd, 1000, 0));
     }
     while (0);

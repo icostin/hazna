@@ -201,9 +201,12 @@ struct hza_world_s
 struct hza_task_s
 {
     c41_np_t links;
+    uint8_t * reg_space;
     hza_exec_state_t * exec_stack;
     hza_imported_module_t * imp_table; // table of imported modules
     hza_context_t * owner; // the context manipulating the task
+    uint_t reg_base; // current offset from reg_space in bytes
+    uint_t reg_limit; // limit in bytes
     uint_t stack_depth;
     uint_t stack_limit;
     uint32_t imp_count; // number of imported modules
@@ -220,7 +223,7 @@ struct hza_exec_state_s
     uint16_t module_index; // which module is execution in
     uint32_t block_index; // which block is execution in
     uint16_t insn_index; // which insn is execution at
-    uint16_t reg_delta; // bits register data shifted
+    uint16_t reg_shift; // bits register data shifted
 };
 
 struct hza_imported_module_s
@@ -524,7 +527,8 @@ HZA_API hza_error_t C41_CALL hza_enter
 (
     hza_context_t * hc,
     uint_t module_index,
-    uint32_t proc_index
+    uint32_t proc_index,
+    uint16_t reg_shift
 );
 
 /* hza_run ******************************************************************/

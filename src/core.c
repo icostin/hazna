@@ -5,6 +5,7 @@
 #define DEFAULT_STACK_LIMIT 0x10
 #define ABSOLUTE_STACK_LIMIT 0x1000
 #define INIT_IMPORT_LIMIT 2
+#define INIT_REG_SIZE 0x100
 
 /* macros *******************************************************************/
 #define L(_hc, _level, ...) \
@@ -1066,7 +1067,7 @@ HZA_API hza_error_t C41_CALL hza_seal_proc
     hza_module_t * m
 )
 {
-    uint32_t i, j, k;
+    uint32_t i, j, k, btop;
     uint_t rs, irs;
     i = m->proc_unsealed;
     if (i >= m->proc_count)
@@ -1077,18 +1078,20 @@ HZA_API hza_error_t C41_CALL hza_seal_proc
     m->proc_table[i].block_index = m->block_unused;
     m->proc_table[i].block_count = m->block_count - m->block_unused;
     m->block_unused = m->block_count;
-
-    for (j = m->proc_table[i].block_index; j < m->block_count; ++j)
+    j = m->proc_table[i].block_index, btop = j + m->block_count;
+    for (rs = 0; j < btop; ++j)
     {
         m->block_table[j].proc_index = i;
-        for (rs = k = 0; k < m->block_table[j].insn_count; ++k)
+        for (k = 0; k < m->block_table[j].insn_count; ++k)
         {
             irs = insn_reg_bits(m->insn_table + m->block_table[j].insn_index 
                                 + k);
+            D("irs(I$.4Hd/B$.4Hd:i$.4Hd)=$.1Xd", 
+              m->block_table[j].insn_index + k, j, k, irs);
             if (rs < irs) rs = irs;
         }
     }
-    rs = (rs + 0x7F) & 0xFF80;
+    rs = (rs + 0x80) & 0xFF80;
     m->proc_table[i].reg_size = rs;
 
     D("sealed m$.4Hd.p$.4Hd: b$.4Hd...b$.4Hd reg_size=$Xd", m->module_id, i,
@@ -1180,6 +1183,17 @@ static hza_error_t C41_CALL alloc_task
         return (hc->hza_error = HZAE_ALLOC);
     }
 
+    t->reg_limit = INIT_REG_SIZE;
+    mae = C41_VAR_ALLOC(&w->mac.ma, t->reg_space, t->reg_limit);
+    if (mae)
+    {
+        E("faield allocating reg space (ma error $i)\n", mae);
+        hc->ma_error = mae;
+        e = free_task(hc);
+        if (e) return e;
+        return (hc->hza_error = HZAE_ALLOC);
+    }
+
     return 0;
 }
 
@@ -1194,6 +1208,18 @@ static hza_error_t C41_CALL free_task
     int mae;
 
     if (!t) return 0;
+
+    if (t->reg_space)
+    {
+        mae = C41_VAR_FREE(&w->mac.ma, t->reg_space, t->reg_limit);
+        if (mae)
+        {
+            F("failed freeing reg space for t$Ui (ma error $i)\n", 
+              t->task_id, mae);
+            hc->ma_free_error = mae;
+            return (hc->hza_error = HZAF_FREE);
+        }
+    }
 
     if (t->imp_table)
     {
@@ -1365,7 +1391,8 @@ HZA_API hza_error_t C41_CALL hza_enter
 (
     hza_context_t * hc,
     uint_t module_index,
-    uint32_t proc_index
+    uint32_t proc_index,
+    uint16_t reg_shift
 )
 {
     hza_world_t * w = hc->world;
@@ -1375,6 +1402,13 @@ HZA_API hza_error_t C41_CALL hza_enter
     hza_module_t * m;
     hza_exec_state_t * es;
     uint_t depth;
+    uint_t rs;
+
+    if ((reg_shift & 0x7F) != 0)
+    {
+        F("bad reg_shift: $.1Xd", reg_shift);
+        return hc->hza_error = HZAF_BUG;
+    }
 
     im = &t->imp_table[module_index];
     m = im->module;
@@ -1413,6 +1447,27 @@ HZA_API hza_error_t C41_CALL hza_enter
     es->module_index = module_index;
     es->block_index = m->proc_table[proc_index].block_index;
     es->insn_index = 0;
+    es->reg_shift = reg_shift;
+    rs = (reg_shift + m->proc_table[proc_index].reg_size) >> 3;
+    if (t->reg_base + rs > t->reg_limit)
+    {
+        hc->args[0] = (intptr_t) t->reg_space;
+        hc->args[1] = 1;
+        hc->args[2] = t->reg_limit << 1;
+        hc->args[3] = t->reg_limit;
+        e = run_locked(hc, realloc_table, w->world_mutex);
+        if (e)
+        {
+            E("failed to extend register space for t$Ui: $s = $i",
+              t->task_id, hza_error_name(e), e);
+            return e;
+        }
+        t->reg_space = (uint8_t *) hc->args[0];
+        t->reg_limit <<= 1;
+        D("resized reg space to $.1Xd bytes", t->reg_limit);
+    }
+    t->reg_base += reg_shift >> 3;
+
     t->stack_depth++;
     D("entering m$.4d.p$.4d (b$.4Hd)", 
       module_index, proc_index, es->block_index);
@@ -1496,10 +1551,12 @@ HZA_API hza_error_t C41_CALL hza_run
     uint_t depth;
     uint_t i, iter;
     uint_t target_index, block_index, insn_index, insn_count;
+    uint8_t * rb;
 
     ASSERT(t != NULL);
 
     depth = t->stack_depth;
+    D("stack_depth = $i", depth);
     if (depth <= call_level) return 0;
     es = &t->exec_stack[depth - 1];
 
@@ -1510,6 +1567,7 @@ HZA_API hza_error_t C41_CALL hza_run
     b = m->block_table + block_index;
     target_index = es->target_index;
     insn_index = b->insn_index + es->insn_index;
+    rb = t->reg_space + t->reg_base;
     for (iter = 0; iter < iter_limit; )
     {
         insn_count = b->insn_index + b->insn_count;
@@ -1517,12 +1575,21 @@ HZA_API hza_error_t C41_CALL hza_run
              i < insn_count; 
              ++i, ++insn)
         {
-            D("m$Ui:p$.4Hd:b$.2Hd:i$.2Hd: $s($Xw)", 
+            D("m$Ui:p$.4Hd:B$.2Hd:i$.2Hd: $s($Xw)", 
               m->module_id, b->proc_index, block_index, i - b->insn_index,
               hza_opcode_name(insn->opcode), insn->opcode);
             switch (insn->opcode)
             {
             case HZAO_NOP:
+                break;
+            case HZAO_ZXCONST_32:
+                *(uint32_t *) (rb + insn->a) = 
+                    insn->b | ((uint32_t) insn->c << 16);
+                break;
+            case HZAO_OUTPUT_DEBUG_CHAR_32:
+                I("DEBUG_CHAR:  $c", *(uint32_t *) (rb + insn->a));
+                break;
+            case HZAO_RETURN:
                 break;
             default:
                 F("unsupported opcode: $s($Xw)", 
@@ -1533,6 +1600,21 @@ HZA_API hza_error_t C41_CALL hza_run
         /* reached end of block: select the new block */
         iter += i - insn_index;
         block_index = m->target_table[b->target_index + target_index];
+        if (block_index == 0)
+        {
+            // return
+            t->stack_depth = --depth;
+            t->reg_base -= es->reg_shift >> 3;
+            rb = t->reg_space + t->reg_base;
+            es--;
+            if (depth <= call_level) return 0;
+            block_index = es->block_index;
+            b = m->block_table + block_index;
+            target_index = es->target_index;
+            insn_index = b->insn_index + es->insn_index;
+            continue;
+        }
+
         b = m->block_table + block_index;
         insn_index = b->insn_index;
     }
