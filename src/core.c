@@ -237,8 +237,8 @@ HZA_API char const * C41_CALL hza_opcode_name (uint16_t o)
     switch (o)
     {
         X(HZAO_NOP);
-        X(HZAO_RETURN);
-        X(HZAO_OUTPUT_DEBUG_CHAR_32);
+        X(HZAO_OUTPUT_DEBUG_CHAR);
+        X(HZAO_DIRECT_CALL);
         X(HZAO_CONST_1);
         X(HZAO_CONST_2);
         X(HZAO_CONST_4);
@@ -1051,10 +1051,35 @@ static uint_t insn_reg_bits
     hza_insn_t * insn
 )
 {
-    switch (insn->opcode >> 5)
+    switch (insn->opcode)
     {
-    case HZAO__A_REG >> 5:
-        return insn->a + (1 << (insn->opcode & 7));
+    case HZAO_ZXCONST_1:
+    case HZAO_SXCONST_1:
+        return insn->a + 1;
+    case HZAO_ZXCONST_2:
+    case HZAO_SXCONST_2:
+        return insn->a + 2;
+    case HZAO_ZXCONST_4:
+    case HZAO_SXCONST_4:
+        return insn->a + 4;
+    case HZAO_ZXCONST_8:
+    case HZAO_SXCONST_8:
+        return insn->a + 8;
+    case HZAO_ZXCONST_16:
+    case HZAO_SXCONST_16:
+        return insn->a + 16;
+    case HZAO_ZXCONST_32:
+    case HZAO_SXCONST_32:
+    case HZAO_OUTPUT_DEBUG_CHAR:
+        return insn->a + 32;
+    case HZAO_ZXCONST_64:
+    case HZAO_SXCONST_64:
+        return insn->a + 64;
+    case HZAO_ZXCONST_128:
+    case HZAO_SXCONST_128:
+        return insn->a + 128;
+    case HZAO_DIRECT_CALL:
+        return insn->a;
     default:
         return 0;
     }
@@ -1084,9 +1109,9 @@ HZA_API hza_error_t C41_CALL hza_seal_proc
         m->block_table[j].proc_index = i;
         for (k = 0; k < m->block_table[j].insn_count; ++k)
         {
-            irs = insn_reg_bits(m->insn_table + m->block_table[j].insn_index 
+            irs = insn_reg_bits(m->insn_table + m->block_table[j].insn_index
                                 + k);
-            D("irs(I$.4Hd/B$.4Hd:i$.4Hd)=$.1Xd", 
+            D("irs(I$.4Hd/B$.4Hd:i$.4Hd)=$.1Xd",
               m->block_table[j].insn_index + k, j, k, irs);
             if (rs < irs) rs = irs;
         }
@@ -1097,6 +1122,7 @@ HZA_API hza_error_t C41_CALL hza_seal_proc
     D("sealed m$.4Hd.p$.4Hd: b$.4Hd...b$.4Hd reg_size=$Xd", m->module_id, i,
       m->proc_table[i].block_index, m->block_count - 1, rs);
 
+    m->proc_unsealed++;
     return 0;
 }
 
@@ -1214,7 +1240,7 @@ static hza_error_t C41_CALL free_task
         mae = C41_VAR_FREE(&w->mac.ma, t->reg_space, t->reg_limit);
         if (mae)
         {
-            F("failed freeing reg space for t$Ui (ma error $i)\n", 
+            F("failed freeing reg space for t$Ui (ma error $i)\n",
               t->task_id, mae);
             hc->ma_free_error = mae;
             return (hc->hza_error = HZAF_FREE);
@@ -1469,7 +1495,7 @@ HZA_API hza_error_t C41_CALL hza_enter
     t->reg_base += reg_shift >> 3;
 
     t->stack_depth++;
-    D("entering m$.4d.p$.4d (b$.4Hd)", 
+    D("entering m$.4d.p$.4d (b$.4Hd)",
       module_index, proc_index, es->block_index);
 
     return 0;
@@ -1546,7 +1572,7 @@ HZA_API hza_error_t C41_CALL hza_run
     hza_module_t * m;
     hza_block_t * b;
     hza_exec_state_t * es;
-    //hza_error_t e;
+    hza_error_t e;
     hza_insn_t * insn;
     uint_t depth;
     uint_t i, iter;
@@ -1568,14 +1594,16 @@ HZA_API hza_error_t C41_CALL hza_run
     target_index = es->target_index;
     insn_index = b->insn_index + es->insn_index;
     rb = t->reg_space + t->reg_base;
+    D("run iter_limit: $i", iter_limit);
     for (iter = 0; iter < iter_limit; )
     {
         insn_count = b->insn_index + b->insn_count;
+        D("ii=$i, ic=$i", insn_index, insn_count);
         for (i = insn_index, insn = m->insn_table + i;
-             i < insn_count; 
+             i < insn_count;
              ++i, ++insn)
         {
-            D("m$Ui:p$.4Hd:B$.2Hd:i$.2Hd: $s($Xw)", 
+            D("m$Ui:p$.4Hd:B$.2Hd:i$.2Hd: $s($Xw)",
               m->module_id, b->proc_index, block_index, i - b->insn_index,
               hza_opcode_name(insn->opcode), insn->opcode);
             switch (insn->opcode)
@@ -1583,16 +1611,39 @@ HZA_API hza_error_t C41_CALL hza_run
             case HZAO_NOP:
                 break;
             case HZAO_ZXCONST_32:
-                *(uint32_t *) (rb + insn->a) = 
+                *(uint32_t *) (rb + insn->a) =
                     insn->b | ((uint32_t) insn->c << 16);
                 break;
-            case HZAO_OUTPUT_DEBUG_CHAR_32:
+            case HZAO_DIRECT_CALL:
+                es->block_index = block_index;
+                es->target_index = target_index;
+                ++i;
+                iter += i - insn_index;
+                es->insn_index = (uint16_t) (i - b->insn_index);
+                e = hza_enter(hc, es->module_index, insn->b, insn->a);
+                if (e)
+                {
+                    E("t$.4Hd: failed entering im$.4Hd.p$.4Hd: $s = $i",
+                      t->task_id, es->module_index, insn->b,
+                      hza_error_name(e), e);
+                    return e;
+                }
+                if (iter >= iter_limit) return 0;
+                es++;
+                block_index = es->block_index;
+                b = m->block_table + block_index;
+                target_index = 0;
+                insn_index = b->insn_index + es->insn_index;
+                insn_count = b->insn_index + b->insn_count;
+                rb = t->reg_space + t->reg_base;
+                i = insn_index;
+                insn = m->insn_table + i;
+                break;
+            case HZAO_OUTPUT_DEBUG_CHAR:
                 I("DEBUG_CHAR:  $c", *(uint32_t *) (rb + insn->a));
                 break;
-            case HZAO_RETURN:
-                break;
             default:
-                F("unsupported opcode: $s($Xw)", 
+                F("unsupported opcode: $s($Xw)",
                   hza_opcode_name(insn->opcode), insn->opcode);
                 return (hc->hza_error = HZAF_OPCODE);
             }

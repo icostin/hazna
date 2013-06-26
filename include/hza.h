@@ -38,13 +38,11 @@ enum hza_error_enum
 enum hza_opcode_enum
 {
     HZAO_NOP = 0,
-    HZAO_RETURN,
 
     HZAO__A_REG = 0x20,
-    HZAO_OUTPUT_DEBUG_CHAR_32 = HZAO__A_REG + 5, /* output-debug-char r32:aaaa */
 
     /* const-N  rN:aaaa, CONST_POOL:(bbbb | (cccc << 16)) */
-    HZAO_CONST_1 = HZAO__A_REG + 8,
+    HZAO_CONST_1 = HZAO__A_REG,
     HZAO_CONST_2,
     HZAO_CONST_4,
     HZAO_CONST_8,
@@ -71,6 +69,10 @@ enum hza_opcode_enum
     HZAO_SXCONST_32,
     HZAO_SXCONST_64,
     HZAO_SXCONST_128,
+
+    HZAO__FIXED_SIZE_REG = 0x40,
+    HZAO_OUTPUT_DEBUG_CHAR, /* output-debug-char r32:aaaa */
+    HZAO_DIRECT_CALL, /* direct-call r128:aaaa proc:bbbb */
 };
 
 /* log levels */
