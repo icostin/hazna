@@ -214,6 +214,31 @@ static hza_error_t destroy_mod_name_cells
     hza_context_t * hc,
     c41_rbtree_node_t * n
 );
+
+/* mod00_load **************************************************************/
+static hza_error_t mod00_load
+(
+    hza_context_t * hc,
+    void * data,
+    size_t len
+);
+
+static uint8_t mod00_core[] =
+{
+    '[', 'h', 'z', 'a', '0', '0', ']', 0x0A,
+    0x00, 0x00, 0x01, 0x00, // size
+    0x00, 0x00, 0x00, 0x00, // name
+    0x00, 0x00, 0x00, 0x00, // const128_count
+    0x00, 0x00, 0x00, 0x00, // const64_count
+    0x00, 0x00, 0x00, 0x00, // const32_count
+    0x00, 0x00, 0x00, 0x00, // data_size
+    0x00, 0x00, 0x00, 0x00, // data_block_count
+    0x00, 0x00, 0x00, 0x00, // proc_count
+    0x00, 0x00, 0x00, 0x00, // target_block_count
+    0x00, 0x00, 0x00, 0x00, // target_count
+    0x00, 0x00, 0x00, 0x00, // insn_count
+};
+
 /****************************************************************************/
 /*                                                                          */
 /* Function bodies                                                          */
@@ -245,6 +270,8 @@ HAZNA_API char const * C41_CALL hza_error_name (hza_error_t e)
         X(HZAE_STATE);
         X(HZAE_STACK_LIMIT);
         X(HZAE_PROC_INDEX);
+        X(HZAE_MOD00_TRUNC);
+        X(HZAE_MOD00_MAGIC);
 
         X(HZAF_BUG);
         X(HZAF_NO_CODE);
@@ -484,6 +511,13 @@ HAZNA_API hza_error_t C41_CALL hza_init
         {
             E("failed creating module name cell for 'core': $s = $i",
               hza_error_name(e), e);
+            break;
+        }
+
+        e = mod00_load(hc, mod00_core, sizeof(mod00_core));
+        if (e)
+        {
+            E("failed loading 'core' module: $s = $i", hza_error_name(e), e);
             break;
         }
 
@@ -813,6 +847,33 @@ static hza_error_t C41_CALL safe_alloc
 )
 {
     return safe_realloc_table(hc, NULL, size, 1, 0);
+}
+
+/* mod00_load ***************************************************************/
+static hza_error_t mod00_load
+(
+    hza_context_t * hc,
+    void * data,
+    size_t len
+)
+{
+    hza_mod00_hdr_t * hdr;
+
+    if (len < sizeof(hza_mod00_hdr_t))
+    {
+        E("not enough data ($Xz)", len);
+        return hc->hza_error = HZAE_MOD00_TRUNC;
+    }
+
+    hdr = data;
+    if (!C41_MEM_EQUAL(hdr->magic, HZA_MOD00_MAGIC, 8))
+    {
+        E("bad magic!");
+        return hc->hza_error = HZAE_MOD00_MAGIC;
+    }
+
+    F("no code");
+    return hc->hza_error = HZAF_NO_CODE;
 }
 
 #if 0
