@@ -1,5 +1,5 @@
 #include <stdarg.h>
-#include "../include/hza.h"
+#include "../include/hazna.h"
 
 /* internal configurable constants ******************************************/
 #define DEFAULT_STACK_LIMIT 0x10
@@ -14,20 +14,26 @@
                  (_level), __VA_ARGS__)); \
     else ((void) 0)
 
+/* DEBUG_CHECK(expr): checks that the given condition is true. the check is
+ * performed only on debug builds, it's missing completely on release
+ * (unlike assert() where expr is evaluated on release)
+ */
 #if _DEBUG
 #   define D(...) L(hc, HZA_LL_DEBUG, __VA_ARGS__)
-#   define ASSERT(_cond) \
+#   define DEBUG_CHECK(_cond) \
     if ((_cond)) ; \
     else do { F("ASSERTION FAILED: $s", #_cond); return HZAF_BUG; } while (0)
 #else
 #   define D(...)
-#   define ASSERT(_cond)
+#   define DEBUG_CHECK(_cond)
 #endif
 
 #define I(...) L(hc, HZA_LL_INFO, __VA_ARGS__)
 #define W(...) L(hc, HZA_LL_WARNING, __VA_ARGS__)
 #define E(...) L(hc, HZA_LL_ERROR, __VA_ARGS__)
 #define F(...) L(hc, HZA_LL_FATAL, __VA_ARGS__)
+#define EF(_e, ...) \
+    L(hc, (_e) < HZA_FATAL ? HZA_LL_ERROR : HZA_LL_FATAL, __VA_ARGS__)
 
 #define WORLD_SIZE (sizeof(hza_world_t) + smt->mutex_size * 4)
 
@@ -80,66 +86,7 @@ static hza_error_t run_locked
     c41_smt_mutex_t * mutex
 );
 
-/* alloc_module *************************************************************/
-/**
- * Allocates data for a module.
- * This should be called with the world mutex locked.
- * Fills in hc->args[0] with the pointer to the  allocated module.
- * The module is not linked into the world, just allocated.
- */
-static hza_error_t C41_CALL alloc_module
-(
-    hza_context_t * hc
-);
-
-/* free_module **************************************************************/
-/**
- * Frees data for a module.
- * This should be called with the world mutex locked.
- * The function work with partially initialised modules so that
- * alloc_module() can call this if it encounters errors at some allocation
- * The module to be freed is passed in hc->args[0]
- * Returns:
- *  0                           ok
- *  HZAF_FREE                   likely heap corruption while freeing;
- *                              hc->ma_free_error has the ma error
- **/
-static hza_error_t C41_CALL free_module
-(
-    hza_context_t * hc
-);
-
-/* init_module **************************************************************/
-/**
- * Initialises a just-created module into the unbound module list and
- * assigns current context as the owner (the only one allowed to change).
- * This should be called while holding the module mutex.
- * The module is passed in hc->args[0]
- * Returns:
- *  0                           ok
- **/
-static hza_error_t C41_CALL init_module
-(
-    hza_context_t * hc
-);
-
-/* release_module ***********************************************************/
-/**
- * Releases ownership of a module.
- * The module is passed in hc->args[0]
- **/
-static hza_error_t C41_CALL release_module
-(
-    hza_context_t * hc
-);
-/* load_module **************************************************************/
-static hza_error_t C41_CALL load_module
-(
-    hza_context_t * hc
-);
-
-
-/* realloc_table ************************************************************/
+/* realloc_table_locked *****************************************************/
 /**
  * Reallocates a given array.
  * Should be called while world mutex is locked!
@@ -153,36 +100,37 @@ static hza_error_t C41_CALL load_module
  *  HZAE_ALLOC                  alloc failed
  *  HZAF_ALLOC                  heap corruption
  **/
-static hza_error_t C41_CALL realloc_table
+static hza_error_t C41_CALL realloc_table_locked
 (
     hza_context_t * hc
 );
 
-/* alloc_task ***************************************************************/
-static hza_error_t C41_CALL alloc_task
+/* safe_realloc_table *******************************************************/
+/**
+ * locks world_mutex and reallocates.
+ * the new pointer is returned in hc->args.realloc.ptr
+ */
+static hza_error_t C41_CALL safe_realloc_table
 (
-    hza_context_t * hc
+    hza_context_t * hc,
+    void * old_ptr,
+    size_t item_size,
+    size_t new_count,
+    size_t old_count
 );
-/* free_task ****************************************************************/
-static hza_error_t C41_CALL free_task
+
+/* safe_alloc ***************************************************************/
+/**
+ * Locks world mutex and allocates.
+ * the new pointer is returned in hc->args.realloc.ptr
+ */
+static hza_error_t C41_CALL safe_alloc
 (
-    hza_context_t * hc
+    hza_context_t * hc,
+    size_t size
 );
-/* init_task ****************************************************************/
-static hza_error_t C41_CALL init_task
-(
-    hza_context_t * hc
-);
-/* release_task *************************************************************/
-static hza_error_t C41_CALL release_task
-(
-    hza_context_t * hc
-);
-/* inc_import_count *********************************************************/
-static hza_error_t inc_import_count
-(
-    hza_context_t * hc
-);
+
+#if 0
 /* insn_reg_bits ************************************************************/
 /**
  * Computes the minimum number of bits in the register space to allow running
@@ -192,12 +140,90 @@ static uint_t insn_reg_bits
 (
     hza_insn_t * insn
 );
-/* Function bodies **********************************************************/
+
+#endif
+
+/* find_mod_name_cell *******************************************************/
+/**
+ * Builds the tree path in search of the given name.
+ * The function should be called with module mutex locked.
+ * returns: 0 - name found, 1 - name not found.
+ */
+static int C41_CALL find_mod_name_cell
+(
+    hza_context_t *             hc,
+    uint8_t const *             name,
+    uint_t                      len,
+    c41_rbtree_path_t *         path
+);
+
+/* alloc_mod_name_cell ******************************************************/
+/**
+ * Allocate a module name cell.
+ * Path has to be initialised previously by find_mod_name_cell().
+ * The function should be called with module mutex locked and the lock should
+ * not have been released in between find_mod_name_cell() and this call.
+ */
+static hza_error_t C41_CALL alloc_mod_name_cell
+(
+    hza_context_t *             hc,
+    uint8_t const *             name,
+    uint_t                      len,
+    c41_rbtree_path_t *         path,
+    hza_mod_name_cell_t * *     mnc_p
+);
+
+/* get_mod_name_cell ********************************************************/
+/**
+ * Searches for the given module name and if none is found it allocates a cell.
+ * If len < 0 the function will replace it with the C-string length of name.
+ * The function should be called with module mutex locked.
+ */
+static hza_error_t C41_CALL get_mod_name_cell
+(
+    hza_context_t *             hc,
+    void *                      name,
+    int                         len,
+    hza_mod_name_cell_t * *     mnc_p
+);
+
+/* detach_context ***********************************************************/
+/**
+ * Detaches context from the world.
+ * Multithreading state: world_mutex must be locked.
+ * Just decrements context_count in the world.
+ * fills hc->args.context_count with the number of contexts left attached to
+ * the world.
+ **/
+static hza_error_t C41_CALL detach_context
+(
+    hza_context_t * hc
+);
+
+/* mod_name_cmp *************************************************************/
+static uint_t mod_name_cmp
+(
+    void * key,
+    void * node_payload,
+    void * context
+);
+
+/* destroy_mod_name_cells ***************************************************/
+static hza_error_t destroy_mod_name_cells
+(
+    hza_context_t * hc,
+    c41_rbtree_node_t * n
+);
+/****************************************************************************/
+/*                                                                          */
+/* Function bodies                                                          */
+/*                                                                          */
+/****************************************************************************/
 
 /* hza_lib_name *************************************************************/
-HZA_API char const * C41_CALL hza_lib_name ()
+HAZNA_API char const * C41_CALL hza_lib_name ()
 {
-    return "hazna-v00"
+    return "hazna-engine-v00"
 #if _DEBUG
         "-debug"
 #else
@@ -207,7 +233,7 @@ HZA_API char const * C41_CALL hza_lib_name ()
 }
 
 /* hza_error_name ***********************************************************/
-HZA_API char const * C41_CALL hza_error_name (hza_error_t e)
+HAZNA_API char const * C41_CALL hza_error_name (hza_error_t e)
 {
 #define X(_x) case _x: return #_x
     switch (e)
@@ -231,39 +257,14 @@ HZA_API char const * C41_CALL hza_error_name (hza_error_t e)
 #undef X
 }
 
-HZA_API char const * C41_CALL hza_opcode_name (uint16_t o)
+/* hza_opcode_name **********************************************************/
+HAZNA_API char const * C41_CALL hza_opcode_name (uint16_t o)
 {
 #define X(_x) case _x: return #_x
     switch (o)
     {
         X(HZAO_NOP);
-        X(HZAO_OUTPUT_DEBUG_CHAR);
-        X(HZAO_DIRECT_CALL);
-        X(HZAO_CONST_1);
-        X(HZAO_CONST_2);
-        X(HZAO_CONST_4);
-        X(HZAO_CONST_8);
-        X(HZAO_CONST_16);
-        X(HZAO_CONST_32);
-        X(HZAO_CONST_64);
-        X(HZAO_CONST_128);
-        X(HZAO_ZXCONST_1);
-        X(HZAO_ZXCONST_2);
-        X(HZAO_ZXCONST_4);
-        X(HZAO_ZXCONST_8);
-        X(HZAO_ZXCONST_16);
-        X(HZAO_ZXCONST_32);
-        X(HZAO_ZXCONST_64);
-        X(HZAO_ZXCONST_128);
-        X(HZAO_SXCONST_1);
-        X(HZAO_SXCONST_2);
-        X(HZAO_SXCONST_4);
-        X(HZAO_SXCONST_8);
-        X(HZAO_SXCONST_16);
-        X(HZAO_SXCONST_32);
-        X(HZAO_SXCONST_64);
-        X(HZAO_SXCONST_128);
-
+        X(HZAO_HALT);
     }
     return "HZAO_UNKNOWN";
 #undef X
@@ -376,8 +377,29 @@ static hza_error_t run_locked
     return e;
 }
 
+/* mod_name_cmp *************************************************************/
+static uint_t mod_name_cmp
+(
+    void * key,
+    void * node_payload,
+    void * context
+)
+{
+    c41_u8an_t * k = key;
+    hza_mod_name_cell_t * mnc = node_payload;
+    int c;
+
+    (void) context;
+
+    if (k->n != mnc->len)
+        return k->n < mnc->len ? C41_RBTREE_SMALLER : C41_RBTREE_GREATER;
+    c = C41_MEM_COMPARE(k->a, mnc->name, k->n);
+    if (c) return c < 0 ? C41_RBTREE_SMALLER : C41_RBTREE_GREATER;
+    return C41_RBTREE_EQUAL;
+}
+
 /* hza_init *****************************************************************/
-HZA_API hza_error_t C41_CALL hza_init
+HAZNA_API hza_error_t C41_CALL hza_init
 (
     hza_context_t * hc,
     c41_ma_t * ma,
@@ -389,6 +411,7 @@ HZA_API hza_error_t C41_CALL hza_init
     hza_error_t e;
     hza_world_t * w;
     int mae, smte, qi;
+    hza_mod_name_cell_t * mnc;
 
     /* clear the context struct */
     C41_VAR_ZERO(*hc);
@@ -411,13 +434,14 @@ HZA_API hza_error_t C41_CALL hza_init
     w->module_mutex = C41_PTR_OFS(w->log_mutex, smt->mutex_size);
     w->task_mutex = C41_PTR_OFS(w->module_mutex, smt->mutex_size);
     w->context_count = 1;
-    c41_dlist_init(&w->loaded_module_list);
-    c41_dlist_init(&w->unbound_module_list);
+    c41_dlist_init(&w->module_list);
 
     for (qi = 0; qi < HZA_TASK_STATES; qi++)
     {
         c41_dlist_init(&w->task_list[qi]);
     }
+
+    c41_rbtree_init(&w->module_name_tree, mod_name_cmp, NULL);
 
     /* init allocator; count allocs to detect leaks */
     c41_ma_counter_init(&w->mac, ma,
@@ -454,6 +478,47 @@ HZA_API hza_error_t C41_CALL hza_init
             break;
         }
         w->init_state |= HZA_INIT_TASK_MUTEX;
+
+        e = get_mod_name_cell(hc, "core", -1, &mnc);
+        if (e)
+        {
+            E("failed creating module name cell for 'core': $s = $i",
+              hza_error_name(e), e);
+            break;
+        }
+
+#if 0
+        {
+            uint32_t tmp;
+            e = get_mod_name_cell(hc, "core", -1, &mnc);
+            for (tmp = 0; tmp < 10000000; ++tmp)
+            {
+                e = get_mod_name_cell(hc, &tmp, 4, &mnc);
+                if (e)
+                {
+                    E("failed initing tmp cell $i", tmp);
+                    break;
+                }
+                mnc->module = (void *) ((intptr_t) tmp + 5);
+            }
+
+            for (tmp = 0; tmp < 10000000; ++tmp)
+            {
+                e = get_mod_name_cell(hc, &tmp, 4, &mnc);
+                if (e)
+                {
+                    E("failed retrieving tmp cell $i", tmp);
+                    break;
+                }
+                if ((intptr_t) mnc->module != ((intptr_t) tmp + 5))
+                {
+                    e = HZAF_BUG;
+                    E("meh tmp=$i, m=$p", tmp, mnc->module);
+                }
+
+            }
+        }
+#endif
     }
     while (0);
 
@@ -471,83 +536,87 @@ HZA_API hza_error_t C41_CALL hza_init
     return 0;
 }
 
+/* detach_context *******************************************************************/
+static hza_error_t detach_context
+(
+    hza_context_t * hc
+)
+{
+    hza_world_t * w = hc->world;
+    hc->args.context_count = (w->context_count -= 1);
+    return 0;
+}
+
+/* destroy_mod_name_cells ***************************************************/
+static hza_error_t destroy_mod_name_cells
+(
+    hza_context_t * hc,
+    c41_rbtree_node_t * n
+)
+{
+    hza_mod_name_cell_t * mnc;
+    hza_error_t e;
+    uint_t mae;
+
+    mnc = (void *) (n + 1);
+    if (n->left)
+    {
+        e = destroy_mod_name_cells(hc, n->left);
+        if (e) return e;
+    }
+
+    if (n->right)
+    {
+        e = destroy_mod_name_cells(hc, n->right);
+        if (e) return e;
+    }
+
+    mae = c41_ma_free(&hc->world->mac.ma, n,
+                      sizeof(c41_rbtree_node_t) + sizeof(hza_mod_name_cell_t)
+                      + mnc->len);
+    if (mae)
+    {
+        F("failed freeing mod name cell: $i", mae);
+        return hc->hza_error = HZAF_FREE;
+    }
+    return 0;
+}
+
 /* hza_finish ***************************************************************/
-HZA_API hza_error_t C41_CALL hza_finish
+HAZNA_API hza_error_t C41_CALL hza_finish
 (
     hza_context_t * hc
 )
 {
     hza_world_t * w = hc->world;
     c41_smt_t * smt = w->smt;
-    hza_module_t * m;
-    hza_module_t * mn;
-    hza_task_t * t;
-    int mae, smte, cc, dirty, qi;
+    int mae, smte, dirty;
     hza_error_t e;
-    c41_np_t * np;
 
     if ((w->init_state & HZA_INIT_WORLD_MUTEX))
     {
-        /* lock the world */
-        smte = c41_smt_mutex_lock(smt, w->world_mutex);
-        if (smte)
+        e = run_locked(hc, detach_context, w->world_mutex);
+        if (e)
         {
-            E("failed locking world mutex ($i)", smte);
-            hc->smt_error = smte;
-            hc->hza_finish_error = HZAF_MUTEX_LOCK;
-            return HZAF_MUTEX_LOCK;
-        }
-        /* decrement the number of contexts pointing to this world */
-        cc = (w->context_count -= 1);
-        /* unlock the world */
-        smte = c41_smt_mutex_unlock(smt, w->world_mutex);
-        if (smte)
-        {
-            E("failed unlocking world mutex ($i)", smte);
-            hc->smt_error = smte;
-            hc->hza_finish_error = HZAF_MUTEX_UNLOCK;
-            return HZAF_MUTEX_UNLOCK;
+            F("failed detaching context: $s = $i", hza_error_name(e), e);
+            return e;
         }
         /* if there are other contexts working with the world then exit */
-        D("finished context $#G4p, world context count: $Ui", hc, cc);
-        if (cc > 0) return hc->hza_finish_error = 0;
+        D("finished context $#G4p, world context count: $Ui", hc,
+          hc->args.context_count);
+        if (hc->args.context_count > 0)
+            return (hc->hza_finish_error = 0);
     }
 
     /* destroy the world */
     I("ending world $#G4p...", w);
 
-    /* destroy tasks */
-    for (qi = 0; qi < HZA_TASK_STATES; qi++)
+    if (w->module_name_tree.root)
     {
-        for (np = w->task_list[qi].next; np != &w->task_list[qi];)
-        {
-            t = (hza_task_t *) np;
-            np = np->next;
-            hc->args[0] = (intptr_t) t;
-            e = free_task(hc);
-            if (e)
-            {
-                F("failed freeing task t$Ui: $s = $i", t->task_id,
-                  hza_error_name(e), e);
-                return e;
-            }
-        }
-    }
-
-    /* push loaded modules in the unbound list */
-    c41_dlist_extend(&w->unbound_module_list, &w->loaded_module_list, C41_NEXT);
-
-    /* destroy modules */
-    for (m = (hza_module_t *) w->unbound_module_list.next;
-         m != (hza_module_t *) &w->unbound_module_list;
-         m = mn)
-    {
-        mn = (hza_module_t *) m->links.next;
-        hc->args[0] = (intptr_t) m;
-        e = free_module(hc);
+        e = destroy_mod_name_cells(hc, w->module_name_tree.root);
         if (e)
         {
-            F("failed freeing module $Ui: $s = $i", m->module_id,
+            F("failed destroying mod name cell tree: $s = $i",
               hza_error_name(e), e);
             return e;
         }
@@ -613,236 +682,102 @@ HZA_API hza_error_t C41_CALL hza_finish
     return (hc->hza_finish_error = dirty ? HZAE_WORLD_FINISH : 0);
 }
 
-/* alloc_module *************************************************************/
-static hza_error_t C41_CALL alloc_module
+/* find_mod_name_cell *******************************************************/
+static int C41_CALL find_mod_name_cell
 (
-    hza_context_t * hc
+    hza_context_t *             hc,
+    uint8_t const *             name,
+    uint_t                      len,
+    c41_rbtree_path_t *         path
 )
 {
-    hza_world_t * w = hc->world;
-    hza_module_t * m;
-    int mae;
+    c41_u8an_t k;
+    int c;
+
+    k.a = (uint8_t *) name;
+    k.n = len;
+    c = c41_rbtree_find(path, &hc->world->module_name_tree, &k);
+    return c;
+}
+
+
+/* alloc_mod_name_cell ******************************************************/
+static hza_error_t C41_CALL alloc_mod_name_cell
+(
+    hza_context_t *             hc,
+    uint8_t const *             name,
+    uint_t                      len,
+    c41_rbtree_path_t *         path,
+    hza_mod_name_cell_t * *     mnc_p
+)
+{
+    c41_rbtree_node_t * rbtn;
+    hza_mod_name_cell_t * mnc;
     hza_error_t e;
 
-    mae = C41_VAR_ALLOC1Z(&w->mac.ma, m);
-    hc->args[0] = (intptr_t) m;
-    if (mae)
-    {
-        E("failed allocating module (ma error $i)\n", mae);
-        hc->ma_error = mae;
-        return (hc->hza_error = HZAE_ALLOC);
-    }
-
-    m->proc_limit = 2;
-    mae = C41_VAR_ALLOCZ(&w->mac.ma, m->proc_table, m->proc_limit);
-    if (mae)
-    {
-        E("failed allocating proc table for new module (ma error $i)\n", mae);
-        hc->ma_error = mae;
-        e = free_module(hc);
-        if (e) return e;
-        return (hc->hza_error = HZAE_ALLOC);
-    }
-
-    m->block_limit = 2;
-    mae = C41_VAR_ALLOCZ(&w->mac.ma, m->block_table, m->block_limit);
-    if (mae)
-    {
-        E("failed allocating block table for new module (ma error $i)\n", mae);
-        hc->ma_error = mae;
-        e = free_module(hc);
-        if (e) return e;
-        return (hc->hza_error = HZAE_ALLOC);
-    }
-
-    m->insn_limit = 2;
-    mae = C41_VAR_ALLOCZ(&w->mac.ma, m->insn_table, m->insn_limit);
-    if (mae)
-    {
-        E("failed allocating insn table for new module (ma error $i)\n", mae);
-        hc->ma_error = mae;
-        e = free_module(hc);
-        if (e) return e;
-        return (hc->hza_error = HZAE_ALLOC);
-    }
-
-    m->target_limit = 2;
-    mae = C41_VAR_ALLOCZ(&w->mac.ma, m->target_table, m->target_limit);
-    if (mae)
-    {
-        E("failed allocating target table for new module (ma error $i)\n", mae);
-        hc->ma_error = mae;
-        e = free_module(hc);
-        if (e) return e;
-        return (hc->hza_error = HZAE_ALLOC);
-    }
-
-    return 0;
-}
-
-/* free_module **************************************************************/
-static hza_error_t C41_CALL free_module
-(
-    hza_context_t * hc
-)
-{
-    hza_world_t * w = hc->world;
-    hza_module_t * m = (hza_module_t *) hc->args[0];
-    int mae;
-
-    if (!m) return 0;
-
-    if (m->proc_table)
-    {
-        mae = C41_VAR_FREE(&w->mac.ma, m->proc_table, m->proc_limit);
-        if (mae)
-        {
-            F("failed freeing proc table for module (ma error $i)\n", mae);
-            hc->ma_free_error = mae;
-            return (hc->hza_error = HZAF_FREE);
-        }
-    }
-
-    if (m->block_table)
-    {
-        mae = C41_VAR_FREE(&w->mac.ma, m->block_table, m->block_limit);
-        if (mae)
-        {
-            F("failed freeing block table for module (ma error $i)\n", mae);
-            hc->ma_free_error = mae;
-            return (hc->hza_error = HZAF_FREE);
-        }
-    }
-
-    if (m->insn_table)
-    {
-        mae = C41_VAR_FREE(&w->mac.ma, m->insn_table, m->insn_limit);
-        if (mae)
-        {
-            F("failed freeing insn table for module (ma error $i)\n", mae);
-            hc->ma_free_error = mae;
-            return (hc->hza_error = HZAF_FREE);
-        }
-    }
-
-    if (m->target_table)
-    {
-        mae = C41_VAR_FREE(&w->mac.ma, m->target_table, m->target_limit);
-        if (mae)
-        {
-            F("failed freeing target table for module (ma error $i)\n", mae);
-            hc->ma_free_error = mae;
-            return (hc->hza_error = HZAF_FREE);
-        }
-    }
-
-    mae = C41_VAR_FREE1(&w->mac.ma, m);
-    if (mae)
-    {
-        F("error freeing module (ma error $i)\n", mae);
-        hc->ma_free_error = mae;
-        return (hc->hza_error = HZAF_FREE);
-    }
-
-    return 0;
-}
-
-/* init_module **************************************************************/
-static hza_error_t C41_CALL init_module
-(
-    hza_context_t * hc
-)
-{
-    hza_world_t * w = hc->world;
-    hza_module_t * m = (hza_module_t *) hc->args[0];
-    m->owner = hc;
-    m->module_id = w->module_id_seed++;
-    m->block_count = 1;
-    m->block_unsealed = 1;
-    m->block_unused = 1;
-    C41_DLIST_APPEND(w->unbound_module_list, m, links);
-    D("inited module: ptr=$#G4p id=$Ui", m, m->module_id);
-    return 0;
-}
-
-/* hza_create_module ********************************************************/
-HZA_API hza_error_t C41_CALL hza_create_module
-(
-    hza_context_t * hc,
-    hza_module_t * * mp
-)
-{
-    hza_world_t * w = hc->world;
-    hza_error_t e, fe;
-    hza_module_t * m;
-
-    e = run_locked(hc, alloc_module, w->world_mutex);
+    e = safe_alloc(hc, sizeof(c41_rbtree_node_t) + sizeof(hza_mod_name_cell_t)
+                        + len);
     if (e)
     {
-        E("failed alocating module in locked state: $s = $i",
-          hza_error_name(e), e);
-        return e;
+        EF(e, "failed to allocate a module name cell: $s = $i",
+           hza_error_name(e), e);
+        return 0;
     }
 
-    *mp = m = (hza_module_t *) hc->args[0];
+    rbtn = hc->args.realloc.ptr;
+    c41_rbtree_insert(path, rbtn);
+    mnc = (hza_mod_name_cell_t *) (rbtn + 1);
+    mnc->len = len;
+    C41_MEM_COPY(mnc->name, name, len);
+    mnc->name[len] = 0;
+    mnc->module = NULL;
+    *mnc_p = mnc;
 
-    e = run_locked(hc, init_module, w->module_mutex);
-    if (e)
-    {
-        E("failed initialising module (with module mutex locked): $s = $i",
-          hza_error_name(e), e);
-        fe = run_locked(hc, free_module, w->world_mutex);
-        if (fe)
-        {
-            F("failed freeing module after its init failed: $s = $i",
-              hza_error_name(fe), fe);
-            return fe;
-        }
-        return e;
-    }
-
-    return (0);
-}
-
-/* releaSE_MODULE ***********************************************************/
-static hza_error_t C41_CALL release_module
-(
-    hza_context_t * hc
-)
-{
-    hza_module_t * m = (hza_module_t *) hc->args[0];
-
-    ASSERT(m->owner == hc);
-    m->owner = NULL;
     return 0;
 }
 
-/* hza_release_module *******************************************************/
-HZA_API hza_error_t C41_CALL hza_release_module
+/* get_mod_name_cell ********************************************************/
+static hza_error_t C41_CALL get_mod_name_cell
 (
-    hza_context_t * hc,
-    hza_module_t * m
+    hza_context_t *             hc,
+    void *                      name,
+    int                         len,
+    hza_mod_name_cell_t * *     mnc_p
 )
 {
-    hza_world_t * w = hc->world;
+    c41_rbtree_path_t rbpath;
+    int c;
     hza_error_t e;
 
-    hc->args[0] = (intptr_t) m;
-    e = run_locked(hc, release_module, w->module_mutex);
+    if (len < 0) len = C41_STR_LEN(name);
+    c = find_mod_name_cell(hc, name, len, &rbpath);
+    if (!c)
+    {
+        *mnc_p = c41_rbtree_last_payload(&rbpath);
+        return 0;
+    }
 
-    return e;
+    if (c)
+    {
+        e = alloc_mod_name_cell(hc, name, len, &rbpath, mnc_p);
+        if (e) return e;
+    }
+
+    return 0;
 }
 
-/* realloc_table ************************************************************/
-static hza_error_t C41_CALL realloc_table
+/* realloc_table_locked *****************************************************/
+static hza_error_t C41_CALL realloc_table_locked
 (
     hza_context_t * hc
 )
 {
     hza_world_t * w = hc->world;
     int mae;
-    mae = c41_ma_realloc_array(&w->mac.ma, (void * *) &hc->args[0],
-                               hc->args[1], hc->args[2], hc->args[3]);
+    mae = c41_ma_realloc_array(&w->mac.ma, (void * *) &hc->args.realloc.ptr,
+                               hc->args.realloc.item_size,
+                               hc->args.realloc.new_count,
+                               hc->args.realloc.old_count);
     if (mae)
     {
         E("failed reallocating table: ma error $Ui", mae);
@@ -851,200 +786,36 @@ static hza_error_t C41_CALL realloc_table
     return 0;
 }
 
-
-/* hza_add_proc *************************************************************/
-HZA_API hza_error_t C41_CALL hza_add_proc
+/* safe_realloc_table *******************************************************/
+static hza_error_t C41_CALL safe_realloc_table
 (
     hza_context_t * hc,
-    hza_module_t * m
+    void * old_ptr,
+    size_t item_size,
+    size_t new_count,
+    size_t old_count
 )
 {
-    hza_world_t * w = hc->world;
-    uint32_t i;
     hza_error_t e;
-
-    ASSERT(m->owner == hc);
-    if (m->proc_count == m->proc_limit)
-    {
-        hc->args[0] = (intptr_t) m->proc_table;
-        hc->args[1] = sizeof(hza_proc_t);
-        hc->args[2] = m->proc_limit << 1;
-        hc->args[3] = m->proc_limit;
-        e = run_locked(hc, realloc_table, w->module_mutex);
-        if (e)
-        {
-            E("failed reallocating proc table for module m$.4Hd: $s = $Ui",
-              m->module_id, hza_error_name(e), e);
-            return e;
-        }
-        m->proc_table = (hza_proc_t *) hc->args[0];
-        m->proc_limit <<= 1;
-        D("resized proc table for m$.4Hd to $Ui items",
-          m->module_id, m->proc_limit);
-    }
-    i = m->proc_count++;
-
-    C41_VAR_ZERO(m->proc_table[i]);
-    hc->args[0] = i;
-    D("added proc: m$.4Hd.p$.4Hd", m->module_id, i);
-
-    return 0;
+    hc->args.realloc.ptr = old_ptr;
+    hc->args.realloc.item_size = item_size;
+    hc->args.realloc.new_count = new_count;
+    hc->args.realloc.old_count = old_count;
+    e = run_locked(hc, realloc_table_locked, hc->world->world_mutex);
+    return e;
 }
 
-/* hza_add_block ************************************************************/
-HZA_API hza_error_t C41_CALL hza_add_block
+/* safe_alloc ***************************************************************/
+static hza_error_t C41_CALL safe_alloc
 (
     hza_context_t * hc,
-    hza_module_t * m
+    size_t size
 )
 {
-    hza_world_t * w = hc->world;
-    uint32_t i;
-    hza_error_t e;
-
-    ASSERT(m->owner == hc);
-    if (m->block_count == m->block_limit)
-    {
-        hc->args[0] = (intptr_t) m->block_table;
-        hc->args[1] = sizeof(hza_block_t);
-        hc->args[2] = m->block_limit << 1;
-        hc->args[3] = m->block_limit;
-        e = run_locked(hc, realloc_table, w->module_mutex);
-        if (e)
-        {
-            E("failed reallocating block table for module m$.4Hd: $s = $Ui",
-              m->module_id, hza_error_name(e), e);
-            return e;
-        }
-        m->block_table = (hza_block_t *) hc->args[0];
-        m->block_limit <<= 1;
-        D("resized block table for m$.4Hd to $Ui items",
-          m->module_id, m->block_limit);
-    }
-    i = m->block_count++;
-
-    C41_VAR_ZERO(m->block_table[i]);
-    hc->args[0] = i;
-    D("added block: m$.4Hd.b$.4Hd", m->module_id, i);
-
-    return 0;
+    return safe_realloc_table(hc, NULL, size, 1, 0);
 }
 
-/* hza_add_target ***********************************************************/
-HZA_API hza_error_t C41_CALL hza_add_target
-(
-    hza_context_t * hc,
-    hza_module_t * m,
-    uint32_t block_index
-)
-{
-    hza_world_t * w = hc->world;
-    uint32_t i;
-    hza_error_t e;
-
-    ASSERT(m->owner == hc);
-    if (m->target_count == m->target_limit)
-    {
-        hc->args[0] = (intptr_t) m->target_table;
-        hc->args[1] = sizeof(uint32_t);
-        hc->args[2] = m->target_limit << 1;
-        hc->args[3] = m->target_limit;
-        e = run_locked(hc, realloc_table, w->module_mutex);
-        if (e)
-        {
-            E("failed reallocating target table for module m$.4Hd: $s = $Ui",
-              m->module_id, hza_error_name(e), e);
-            return e;
-        }
-        m->target_table = (uint32_t *) hc->args[0];
-        m->target_limit <<= 1;
-        D("resized target table for m$.4Hd to $Ui items",
-          m->module_id, m->target_limit);
-    }
-    i = m->target_count++;
-
-    m->target_table[i] = block_index;
-    hc->args[0] = i;
-    D("added target: m$.4Hd.t$.4Hd = b$.04Hd", m->module_id, i, block_index);
-
-    return 0;
-}
-
-/* hza_add_insn *************************************************************/
-HZA_API hza_error_t C41_CALL hza_add_insn
-(
-    hza_context_t * hc,
-    hza_module_t * m,
-    uint16_t opcode,
-    uint16_t a,
-    uint16_t b,
-    uint16_t c
-)
-{
-    hza_world_t * w = hc->world;
-    uint32_t i;
-    hza_error_t e;
-
-    ASSERT(m->owner == hc);
-    if (m->insn_count == m->insn_limit)
-    {
-        hc->args[0] = (intptr_t) m->insn_table;
-        hc->args[1] = sizeof(hza_insn_t);
-        hc->args[2] = m->insn_limit << 1;
-        hc->args[3] = m->insn_limit;
-        e = run_locked(hc, realloc_table, w->module_mutex);
-        if (e)
-        {
-            E("failed reallocating insn table for module m$.4Hd: $s = $Ui",
-              m->module_id, hza_error_name(e), e);
-            return e;
-        }
-        m->insn_table = (hza_insn_t *) hc->args[0];
-        m->insn_limit <<= 1;
-        D("resized insn table for m$.4Hd to $Ui items",
-          m->module_id, m->insn_limit);
-    }
-    i = m->insn_count++;
-
-    m->insn_table[i].opcode = opcode;
-    m->insn_table[i].a = a;
-    m->insn_table[i].b = b;
-    m->insn_table[i].c = c;
-
-    hc->args[0] = i;
-    D("added insn: m$.4Hd.i$.4Hd = $s:$w a=$w b=$w c=$w",
-      m->module_id, i, hza_opcode_name(opcode), opcode, a, b, c);
-
-    return 0;
-}
-
-/* hza_seal_block ***********************************************************/
-HZA_API hza_error_t C41_CALL hza_seal_block
-(
-    hza_context_t * hc,
-    hza_module_t * m,
-    uint32_t exc_target
-)
-{
-    uint32_t i;
-    i = m->block_unsealed;
-    if (i >= m->block_count)
-    {
-        E("cannot seal block: all blocks sealed in m$.4Xd", m->module_id);
-        return (hc->hza_error = HZAE_STATE);
-    }
-    m->block_table[i].insn_index = m->insn_unused;
-    m->block_table[i].insn_count = m->insn_count - m->insn_unused;
-    m->insn_unused = m->insn_count;
-    m->block_table[i].target_index = m->target_unused;
-    m->block_table[i].target_count = m->target_count - m->target_unused;
-    m->target_unused = m->target_count;
-    m->block_table[i].exc_target = exc_target;
-    m->block_table[i].proc_index = i;
-    m->block_unsealed = i + 1;
-    return 0;
-}
-
+#if 0
 /* insn_reg_bits ************************************************************/
 static uint_t insn_reg_bits
 (
@@ -1053,623 +824,8 @@ static uint_t insn_reg_bits
 {
     switch (insn->opcode)
     {
-    case HZAO_ZXCONST_1:
-    case HZAO_SXCONST_1:
-        return insn->a + 1;
-    case HZAO_ZXCONST_2:
-    case HZAO_SXCONST_2:
-        return insn->a + 2;
-    case HZAO_ZXCONST_4:
-    case HZAO_SXCONST_4:
-        return insn->a + 4;
-    case HZAO_ZXCONST_8:
-    case HZAO_SXCONST_8:
-        return insn->a + 8;
-    case HZAO_ZXCONST_16:
-    case HZAO_SXCONST_16:
-        return insn->a + 16;
-    case HZAO_ZXCONST_32:
-    case HZAO_SXCONST_32:
-    case HZAO_OUTPUT_DEBUG_CHAR:
-        return insn->a + 32;
-    case HZAO_ZXCONST_64:
-    case HZAO_SXCONST_64:
-        return insn->a + 64;
-    case HZAO_ZXCONST_128:
-    case HZAO_SXCONST_128:
-        return insn->a + 128;
-    case HZAO_DIRECT_CALL:
-        return insn->a;
     default:
         return 0;
     }
 }
-
-/* hza_seal_proc ************************************************************/
-HZA_API hza_error_t C41_CALL hza_seal_proc
-(
-    hza_context_t * hc,
-    hza_module_t * m
-)
-{
-    uint32_t i, j, k, btop;
-    uint_t rs, irs;
-    i = m->proc_unsealed;
-    if (i >= m->proc_count)
-    {
-        E("cannot seal proc; all procs sealed in m$.4Xd", m->module_id);
-        return (hc->hza_error = HZAE_STATE);
-    }
-    m->proc_table[i].block_index = m->block_unused;
-    m->proc_table[i].block_count = m->block_count - m->block_unused;
-    m->block_unused = m->block_count;
-    j = m->proc_table[i].block_index, btop = j + m->block_count;
-    for (rs = 0; j < btop; ++j)
-    {
-        m->block_table[j].proc_index = i;
-        for (k = 0; k < m->block_table[j].insn_count; ++k)
-        {
-            irs = insn_reg_bits(m->insn_table + m->block_table[j].insn_index
-                                + k);
-            D("irs(I$.4Hd/B$.4Hd:i$.4Hd)=$.1Xd",
-              m->block_table[j].insn_index + k, j, k, irs);
-            if (rs < irs) rs = irs;
-        }
-    }
-    rs = (rs + 0x80) & 0xFF80;
-    m->proc_table[i].reg_size = rs;
-
-    D("sealed m$.4Hd.p$.4Hd: b$.4Hd...b$.4Hd reg_size=$Xd", m->module_id, i,
-      m->proc_table[i].block_index, m->block_count - 1, rs);
-
-    m->proc_unsealed++;
-    return 0;
-}
-
-/* load_module **************************************************************/
-static hza_error_t C41_CALL load_module
-(
-    hza_context_t * hc
-)
-{
-    hza_world_t * w = hc->world;
-    hza_module_t * m = (hza_module_t *) hc->args[0];
-
-    /* TODO: check if m is a duplicate of some already loaded module and
-     * return that one in hc->args[0] */
-    c41_dlist_del(&m->links);
-    C41_DLIST_APPEND(w->loaded_module_list, m, links);
-    return 0;
-}
-
-/* hza_load *****************************************************************/
-HZA_API hza_error_t C41_CALL hza_load
-(
-    hza_context_t * hc,
-    hza_module_t * m,
-    hza_module_t * * mp
-)
-{
-    hza_world_t * w = hc->world;
-    hza_error_t e;
-
-    hc->args[0] = (intptr_t) m;
-    e = run_locked(hc, load_module, w->module_mutex);
-    if (e)
-    {
-        E("failed loading module m$Ui: $s = $i", m->module_id,
-          hza_error_name(e), e);
-        return e;
-    }
-    *mp = (hza_module_t *) hc->args[0];
-
-    return 0;
-}
-
-/* alloc_task ***************************************************************/
-static hza_error_t C41_CALL alloc_task
-(
-    hza_context_t * hc
-)
-{
-    hza_world_t * w = hc->world;
-    hza_task_t * t;
-    int mae;
-    hza_error_t e;
-
-    mae = C41_VAR_ALLOC1Z(&w->mac.ma, t);
-    hc->args[0] = (intptr_t) t;
-
-    if (mae)
-    {
-        E("failed allocating task (ma error $i)\n", mae);
-        hc->ma_error = mae;
-        return (hc->hza_error = HZAE_ALLOC);
-    }
-
-    t->stack_limit = DEFAULT_STACK_LIMIT;
-    mae = C41_VAR_ALLOCZ(&w->mac.ma, t->exec_stack, t->stack_limit);
-    if (mae)
-    {
-        E("failed allocating task execution stack (ma error $i)\n", mae);
-        hc->ma_error = mae;
-        e = free_task(hc);
-        if (e) return e;
-        return (hc->hza_error = HZAE_ALLOC);
-    }
-
-    t->imp_limit = INIT_IMPORT_LIMIT;
-    mae = C41_VAR_ALLOC(&w->mac.ma, t->imp_table, t->imp_limit);
-    if (mae)
-    {
-        E("failed allocating task import module table (ma error $i)\n", mae);
-        hc->ma_error = mae;
-        e = free_task(hc);
-        if (e) return e;
-        return (hc->hza_error = HZAE_ALLOC);
-    }
-
-    t->reg_limit = INIT_REG_SIZE;
-    mae = C41_VAR_ALLOC(&w->mac.ma, t->reg_space, t->reg_limit);
-    if (mae)
-    {
-        E("faield allocating reg space (ma error $i)\n", mae);
-        hc->ma_error = mae;
-        e = free_task(hc);
-        if (e) return e;
-        return (hc->hza_error = HZAE_ALLOC);
-    }
-
-    return 0;
-}
-
-/* free_task ****************************************************************/
-static hza_error_t C41_CALL free_task
-(
-    hza_context_t * hc
-)
-{
-    hza_world_t * w = hc->world;
-    hza_task_t * t = (hza_task_t *) hc->args[0];
-    int mae;
-
-    if (!t) return 0;
-
-    if (t->reg_space)
-    {
-        mae = C41_VAR_FREE(&w->mac.ma, t->reg_space, t->reg_limit);
-        if (mae)
-        {
-            F("failed freeing reg space for t$Ui (ma error $i)\n",
-              t->task_id, mae);
-            hc->ma_free_error = mae;
-            return (hc->hza_error = HZAF_FREE);
-        }
-    }
-
-    if (t->imp_table)
-    {
-        mae = C41_VAR_FREE(&w->mac.ma, t->imp_table, t->imp_limit);
-        if (mae)
-        {
-            F("failed freeing task import table (ma error $i)\n", mae);
-            hc->ma_free_error = mae;
-            return (hc->hza_error = HZAF_FREE);
-        }
-    }
-
-    if (t->exec_stack)
-    {
-        mae = C41_VAR_FREE(&w->mac.ma, t->exec_stack, t->stack_limit);
-        if (mae)
-        {
-            F("failed freeing task exec stack (ma error $i)\n", mae);
-            hc->ma_free_error = mae;
-            return (hc->hza_error = HZAF_FREE);
-        }
-    }
-
-    mae = C41_VAR_FREE1(&w->mac.ma, t);
-    if (mae)
-    {
-        F("error freeing task (ma error $i)\n", mae);
-        hc->ma_free_error = mae;
-        return (hc->hza_error =  HZAF_FREE);
-    }
-
-    return 0;
-}
-
-/* init_task ****************************************************************/
-static hza_error_t C41_CALL init_task
-(
-    hza_context_t * hc
-)
-{
-    hza_world_t * w = hc->world;
-    hza_task_t * t = (hza_task_t *) hc->args[0];
-
-    t->owner = hc;
-    t->task_id = w->task_id_seed++;
-    // t->ref_count = 1;
-    t->state = HZA_TASK_SUSPENDED;
-    C41_DLIST_APPEND(w->task_list[HZA_TASK_SUSPENDED], t, links);
-
-    return 0;
-}
-
-/* hza_create_task **********************************************************/
-HZA_API hza_error_t C41_CALL hza_create_task
-(
-    hza_context_t * hc,
-    hza_task_t * * tp
-)
-{
-    hza_world_t * w = hc->world;
-    hza_task_t * t;
-    hza_error_t e, fe;
-
-    e = run_locked(hc, alloc_task, w->world_mutex);
-    if (e)
-    {
-        E("failed alocating task in locked state: $s = $i",
-          hza_error_name(e), e);
-        return e;
-    }
-
-    *tp = t = (hza_task_t *) hc->args[0];
-
-    e = run_locked(hc, init_task, w->task_mutex);
-    if (e)
-    {
-        E("failed initialising task (with module mutex locked): $s = $i",
-          hza_error_name(e), e);
-        fe = run_locked(hc, free_task, w->task_mutex);
-        if (fe)
-        {
-            F("failed freeing task after its init failed: $s = $i",
-              hza_error_name(fe), fe);
-            return fe;
-        }
-        return e;
-    }
-
-    return 0;
-}
-
-/* release_task *************************************************************/
-static hza_error_t C41_CALL release_task
-(
-    hza_context_t * hc
-)
-{
-    //hza_world_t * w = hc->world;
-    hza_task_t * t = (hza_task_t *) hc->args[0];
-
-    t->owner = NULL;
-    return 0;
-}
-
-/* hza_release_task *********************************************************/
-HZA_API hza_error_t C41_CALL hza_release_task
-(
-    hza_context_t * hc,
-    hza_task_t * t
-)
-{
-    hza_world_t * w = hc->world;
-    hza_error_t e;
-
-    ASSERT(t->owner == hc);
-    hc->args[0] = (intptr_t) t;
-    e = run_locked(hc, release_task, w->task_mutex);
-    if (e)
-    {
-        E("failed releasing task in locked state: $s = $i",
-          hza_error_name(e), e);
-        return e;
-    }
-    return 0;
-}
-
-/* activate_task ************************************************************/
-static hza_error_t C41_CALL activate_task
-(
-    hza_context_t * hc
-)
-{
-    hza_world_t * w = hc->world;
-    hza_task_t * t = (hza_task_t *) hc->args[0];
-    c41_dlist_del(&t->links);
-    C41_DLIST_APPEND(w->task_list[HZA_TASK_RUNNING], t, links);
-    t->state = HZA_TASK_RUNNING;
-    hc->active_task = t;
-
-    return 0;
-}
-
-/* hza_activate *************************************************************/
-HZA_API hza_error_t C41_CALL hza_activate
-(
-    hza_context_t * hc,
-    hza_task_t * t
-)
-{
-    hza_world_t * w = hc->world;
-    hza_error_t e;
-
-    ASSERT(hc->active_task == NULL);
-    ASSERT(t->owner == hc);
-    hc->args[0] = (intptr_t) t;
-
-    e = run_locked(hc, activate_task, w->task_mutex);
-    if (e)
-    {
-        E("failed activating task in locked state: $s = $i",
-          hza_error_name(e), e);
-        return e;
-    }
-    return 0;
-}
-
-/* hza_enter ****************************************************************/
-HZA_API hza_error_t C41_CALL hza_enter
-(
-    hza_context_t * hc,
-    uint_t module_index,
-    uint32_t proc_index,
-    uint16_t reg_shift
-)
-{
-    hza_world_t * w = hc->world;
-    hza_task_t * t = hc->active_task;
-    hza_error_t e;
-    hza_imported_module_t * im;
-    hza_module_t * m;
-    hza_exec_state_t * es;
-    uint_t depth;
-    uint_t rs;
-
-    if ((reg_shift & 0x7F) != 0)
-    {
-        F("bad reg_shift: $.1Xd", reg_shift);
-        return hc->hza_error = HZAF_BUG;
-    }
-
-    im = &t->imp_table[module_index];
-    m = im->module;
-    if (proc_index >= m->proc_count)
-    {
-        E("requested to enter bad proc index ($Ui >= $Ui) from m$Ui",
-          proc_index, m->proc_count, m->module_id);
-        return hc->hza_error = HZAE_PROC_INDEX;
-    }
-
-    depth = t->stack_depth;
-    if (depth == t->stack_limit)
-    {
-        if (t->stack_limit >= ABSOLUTE_STACK_LIMIT)
-        {
-            E("reached absolute stack limit in task t$Ui", t->task_id);
-            return (hc->hza_error = HZAE_STACK_LIMIT);
-        }
-
-        hc->args[0] = (intptr_t) t->exec_stack;
-        hc->args[1] = sizeof(hza_exec_state_t);
-        hc->args[2] = t->stack_limit << 1;
-        hc->args[3] = t->stack_limit;
-        e = run_locked(hc, realloc_table, w->world_mutex);
-        if (e)
-        {
-            E("failed to extend exec stack for task t$Ui: $s = $i",
-              t->task_id, hza_error_name(e), e);
-            return e;
-        }
-        t->exec_stack = (hza_exec_state_t *) hc->args[0];
-        t->stack_limit <<= 1;
-    }
-    es = t->exec_stack + depth;
-    es->target_index = 0;
-    es->module_index = module_index;
-    es->block_index = m->proc_table[proc_index].block_index;
-    es->insn_index = 0;
-    es->reg_shift = reg_shift;
-    rs = (reg_shift + m->proc_table[proc_index].reg_size) >> 3;
-    if (t->reg_base + rs > t->reg_limit)
-    {
-        hc->args[0] = (intptr_t) t->reg_space;
-        hc->args[1] = 1;
-        hc->args[2] = t->reg_limit << 1;
-        hc->args[3] = t->reg_limit;
-        e = run_locked(hc, realloc_table, w->world_mutex);
-        if (e)
-        {
-            E("failed to extend register space for t$Ui: $s = $i",
-              t->task_id, hza_error_name(e), e);
-            return e;
-        }
-        t->reg_space = (uint8_t *) hc->args[0];
-        t->reg_limit <<= 1;
-        D("resized reg space to $.1Xd bytes", t->reg_limit);
-    }
-    t->reg_base += reg_shift >> 3;
-
-    t->stack_depth++;
-    D("entering m$.4d.p$.4d (b$.4Hd)",
-      module_index, proc_index, es->block_index);
-
-    return 0;
-}
-
-/* inc_import_count *********************************************************/
-static hza_error_t inc_import_count
-(
-    hza_context_t * hc
-)
-{
-    hza_module_t * m = (hza_module_t *) hc->args[0];
-    m->import_count++;
-    return 0;
-}
-
-/* hza_import ***************************************************************/
-HZA_API hza_error_t C41_CALL hza_import
-(
-    hza_context_t * hc,
-    hza_module_t * m,
-    uint64_t anchor
-)
-{
-    hza_world_t * w = hc->world;
-    hza_task_t * t = hc->active_task;
-    hza_error_t e;
-    hza_imported_module_t * im;
-    ASSERT(t != NULL);
-
-    if (t->imp_count == t->imp_limit)
-    {
-        hc->args[0] = (intptr_t) t->imp_table;
-        hc->args[1] = sizeof(hza_imported_module_t);
-        hc->args[2] = t->imp_limit << 1;
-        hc->args[3] = t->imp_limit;
-        e = run_locked(hc, realloc_table, w->world_mutex);
-        if (e)
-        {
-            E("failed resizing import table for t$Ui", t->task_id);
-            return e;
-        }
-        t->imp_table = (hza_imported_module_t *) hc->args[0];
-        t->imp_limit <<= 1;
-    }
-
-    hc->args[0] = (intptr_t) m;
-    e = run_locked(hc, inc_import_count, w->module_mutex);
-    if (e)
-    {
-        F("failed working with module mutex: $s = $i", hza_error_name(e), e);
-        return e;
-    }
-
-    im = &t->imp_table[t->imp_count++];
-    im->anchor = anchor;
-    im->module = m;
-    im->task = t;
-    D("imported m$Ui in t$Ui (anchor = $Xq)", m->module_id, t->task_id, anchor);
-
-    return 0;
-}
-
-/* hza_run ******************************************************************/
-HZA_API hza_error_t C41_CALL hza_run
-(
-    hza_context_t * hc,
-    uint_t iter_limit,
-    uint_t call_level
-)
-{
-    hza_task_t * t = hc->active_task;
-    hza_imported_module_t * im;
-    hza_module_t * m;
-    hza_block_t * b;
-    hza_exec_state_t * es;
-    hza_error_t e;
-    hza_insn_t * insn;
-    uint_t depth;
-    uint_t i, iter;
-    uint_t target_index, block_index, insn_index, insn_count;
-    uint8_t * rb;
-
-    ASSERT(t != NULL);
-
-    depth = t->stack_depth;
-    D("stack_depth = $i", depth);
-    if (depth <= call_level) return 0;
-    es = &t->exec_stack[depth - 1];
-
-    im = t->imp_table + es->module_index;
-    m = im->module;
-
-    block_index = es->block_index;
-    b = m->block_table + block_index;
-    target_index = es->target_index;
-    insn_index = b->insn_index + es->insn_index;
-    rb = t->reg_space + t->reg_base;
-    D("run iter_limit: $i", iter_limit);
-    for (iter = 0; iter < iter_limit; )
-    {
-        insn_count = b->insn_index + b->insn_count;
-        D("ii=$i, ic=$i", insn_index, insn_count);
-        for (i = insn_index, insn = m->insn_table + i;
-             i < insn_count;
-             ++i, ++insn)
-        {
-            D("m$Ui:p$.4Hd:B$.2Hd:i$.2Hd: $s($Xw)",
-              m->module_id, b->proc_index, block_index, i - b->insn_index,
-              hza_opcode_name(insn->opcode), insn->opcode);
-            switch (insn->opcode)
-            {
-            case HZAO_NOP:
-                break;
-            case HZAO_ZXCONST_32:
-                *(uint32_t *) (rb + insn->a) =
-                    insn->b | ((uint32_t) insn->c << 16);
-                break;
-            case HZAO_DIRECT_CALL:
-                es->block_index = block_index;
-                es->target_index = target_index;
-                ++i;
-                iter += i - insn_index;
-                es->insn_index = (uint16_t) (i - b->insn_index);
-                e = hza_enter(hc, es->module_index, insn->b, insn->a);
-                if (e)
-                {
-                    E("t$.4Hd: failed entering im$.4Hd.p$.4Hd: $s = $i",
-                      t->task_id, es->module_index, insn->b,
-                      hza_error_name(e), e);
-                    return e;
-                }
-                if (iter >= iter_limit) return 0;
-                es++;
-                block_index = es->block_index;
-                b = m->block_table + block_index;
-                target_index = 0;
-                insn_index = b->insn_index + es->insn_index;
-                insn_count = b->insn_index + b->insn_count;
-                rb = t->reg_space + t->reg_base;
-                i = insn_index;
-                insn = m->insn_table + i;
-                break;
-            case HZAO_OUTPUT_DEBUG_CHAR:
-                I("DEBUG_CHAR:  $c", *(uint32_t *) (rb + insn->a));
-                break;
-            default:
-                F("unsupported opcode: $s($Xw)",
-                  hza_opcode_name(insn->opcode), insn->opcode);
-                return (hc->hza_error = HZAF_OPCODE);
-            }
-        }
-        /* reached end of block: select the new block */
-        iter += i - insn_index;
-        block_index = m->target_table[b->target_index + target_index];
-        if (block_index == 0)
-        {
-            // return
-            t->stack_depth = --depth;
-            t->reg_base -= es->reg_shift >> 3;
-            rb = t->reg_space + t->reg_base;
-            es--;
-            if (depth <= call_level) return 0;
-            block_index = es->block_index;
-            b = m->block_table + block_index;
-            target_index = es->target_index;
-            insn_index = b->insn_index + es->insn_index;
-            continue;
-        }
-
-        b = m->block_table + block_index;
-        insn_index = b->insn_index;
-    }
-
-    return 0;
-}
-
+#endif

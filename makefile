@@ -1,5 +1,5 @@
-N := hza
-D := HZA
+N := hazna
+D := HAZNA
 
 engine_csrcs := core
 engine_libs := -lc41
