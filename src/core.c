@@ -857,7 +857,7 @@ static hza_error_t mod00_load
     size_t len
 )
 {
-    hza_mod00_hdr_t * hdr;
+    hza_mod00_hdr_t lhdr;
 
     if (len < sizeof(hza_mod00_hdr_t))
     {
@@ -865,12 +865,20 @@ static hza_error_t mod00_load
         return hc->hza_error = HZAE_MOD00_TRUNC;
     }
 
-    hdr = data;
-    if (!C41_MEM_EQUAL(hdr->magic, HZA_MOD00_MAGIC, 8))
+    if (!C41_MEM_EQUAL(data, HZA_MOD00_MAGIC, 8))
     {
         E("bad magic!");
         return hc->hza_error = HZAE_MOD00_MAGIC;
     }
+
+    C41_MEM_COPY(&lhdr, data, sizeof(hza_mod00_hdr_t));
+    c41_bswap32_array(&lhdr.size, (sizeof(hza_mod00_hdr_t) - 8) / 4);
+    if (lhdr.size > len)
+    {
+        E("not enough data: header size = $Xd, raw size = $Xz", lhdr.size, len);
+        return hc->hza_error = HZAE_MOD00_TRUNC;
+    }
+
 
     F("no code");
     return hc->hza_error = HZAF_NO_CODE;
