@@ -230,7 +230,7 @@ static hza_error_t mod00_load
 static uint8_t mod00_core[] =
 {
     '[', 'h', 'z', 'a', '0', '0', ']', 0x0A,
-    C32(0x100),                 // size
+    C32(0x6C),                  // size
     C32(0),                     // name
     C32(0),                     // const128_count
     C32(0),                     // const64_count
@@ -240,10 +240,17 @@ static uint8_t mod00_core[] =
     C32(0),                     // proc_count
     C32(0),                     // target_block_count
     C32(0),                     // target_count
-    C32(0),                     // insn_count
+    C32(1),                     // insn_count
 
     /* proc 00 */
     C32(0),                     // insn start
+    C32(0),                     // target block start
+    C32(0),                     // const32_start
+    C32(0),                     // const64_start
+    C32(0),                     // const128_start
+    C32(0),                     // name
+    /* proc 01 */
+    C32(1),                     // insn start
     C32(0),                     // target block start
     C32(0),                     // const32_start
     C32(0),                     // const64_start
@@ -875,8 +882,10 @@ static hza_error_t mod00_load
 )
 {
     hza_mod00_hdr_t lhdr;
+    uint32_t n;
 
-    if (len < HZA_MOD00_MAGIC_LEN + sizeof(hza_mod00_hdr_t))
+    n = HZA_MOD00_MAGIC_LEN + sizeof(hza_mod00_hdr_t);
+    if (len < n)
     {
         E("not enough data ($Xz)", len);
         return hc->hza_error = HZAE_MOD00_TRUNC;
@@ -888,17 +897,84 @@ static hza_error_t mod00_load
         return hc->hza_error = HZAE_MOD00_MAGIC;
     }
 
-    C41_MEM_COPY(&lhdr, C41_PTR_OFS(data, HZA_MOD00_MAGIC_LEN), 
+    C41_MEM_COPY(&lhdr, C41_PTR_OFS(data, HZA_MOD00_MAGIC_LEN),
                  sizeof(hza_mod00_hdr_t));
-#if C41_LITTLE_ENDIAN
-    c41_read_u32be_array((uint32_t *) &lhdr, 
+    c41_read_u32be_array((uint32_t *) &lhdr,
                          C41_PTR_OFS(data, HZA_MOD00_MAGIC_LEN),
                          sizeof(hza_mod00_hdr_t) / 4);
-#endif
     if (lhdr.size > len)
     {
         E("not enough data: header size = $Xd, raw size = $Xz", lhdr.size, len);
         return hc->hza_error = HZAE_MOD00_TRUNC;
+    }
+
+    len = lhdr.size;
+    if (lhdr.const128_count > ((len - n) >> 4))
+    {
+        E("not enough data");
+        return hc->hza_error = HZAE_MOD00_TRUNC;
+    }
+    n += lhdr.const128_count << 4;
+
+    if (lhdr.const64_count > ((len - n) >> 3))
+    {
+        E("not enough data");
+        return hc->hza_error = HZAE_MOD00_TRUNC;
+    }
+    n += lhdr.const64_count << 3;
+
+    if (lhdr.const32_count > ((len - n) >> 2))
+    {
+        E("not enough data");
+        return hc->hza_error = HZAE_MOD00_TRUNC;
+    }
+    n += lhdr.const32_count << 2;
+
+    if (lhdr.data_block_count >= ((len - n) >> 2))
+    {
+        E("not enough data");
+        return hc->hza_error = HZAE_MOD00_TRUNC;
+    }
+    n += (lhdr.data_block_count + 1) << 2;
+
+    if (lhdr.target_block_count >= ((len - n) >> 2))
+    {
+        E("not enough data");
+        return hc->hza_error = HZAE_MOD00_TRUNC;
+    }
+    n += (lhdr.target_block_count + 1) << 2;
+
+    if (lhdr.target_count >= ((len - n) >> 2))
+    {
+        E("not enough data");
+        return hc->hza_error = HZAE_MOD00_TRUNC;
+    }
+    n += lhdr.target_count << 2;
+
+    if (lhdr.proc_count >= ((len - n) / sizeof(hza_mod00_proc_t)))
+    {
+        E("not enough data");
+        return hc->hza_error = HZAE_MOD00_TRUNC;
+    }
+    n += (lhdr.proc_count + 1) * sizeof(hza_mod00_proc_t);
+
+    if (lhdr.insn_count > ((len - n) >> 4))
+    {
+        E("not enough data");
+        return hc->hza_error = HZAE_MOD00_TRUNC;
+    }
+    n += lhdr.insn_count << 4;
+
+    if (lhdr.data_size != len - n)
+    {
+        if (lhdr.data_size > len - n)
+        {
+            E("not enough data");
+            return hc->hza_error = HZAE_MOD00_TRUNC;
+        }
+        n += lhdr.data_size;
+        E("module size mismatch: declared: $Xd, computed: $Xd",
+          lhdr.size, n);
     }
 
     F("no code");

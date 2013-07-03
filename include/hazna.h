@@ -277,12 +277,12 @@ struct hza_mod00_hdr_s
     uint32_t    const128_count;
     uint32_t    const64_count;
     uint32_t    const32_count;
-    uint32_t    data_size;
     uint32_t    data_block_count;
-    uint32_t    proc_count;
     uint32_t    target_block_count;
     uint32_t    target_count;
+    uint32_t    proc_count;
     uint32_t    insn_count;
+    uint32_t    data_size;
 
     // hza_uint128_t[const128_count]            const128_table
     // uint64_t[const64_count]                  const64_table
