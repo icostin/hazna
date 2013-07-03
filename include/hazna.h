@@ -61,6 +61,7 @@ enum hza_opcode_enum
 #define HZA_MAX_PROC 0x01000000 // 16M procs per module tops! or else...
 
 #define HZA_MOD00_MAGIC "[hza00]\x0A"
+#define HZA_MOD00_MAGIC_LEN 8
 
 /* hza_error_t **************************************************************/
 /**
@@ -269,7 +270,7 @@ struct hza_uint128_s
 
 struct hza_mod00_hdr_s
 {
-    uint8_t     magic[8];
+    //uint8_t     magic[8];
     //uint32_t    checksum;
     uint32_t    size;
     uint32_t    name;

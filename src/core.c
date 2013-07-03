@@ -219,25 +219,42 @@ static hza_error_t destroy_mod_name_cells
 static hza_error_t mod00_load
 (
     hza_context_t * hc,
-    void * data,
+    void const * data,
     size_t len
 );
+
+#define C32(_v) \
+    ((_v) >> 24), ((_v) >> 16) & 0xFF, ((_v) >> 8) & 0xFF, (_v) & 0xFF
+#define C16(_v) ((_v) >> 8), ((_v) & 0xFF)
 
 static uint8_t mod00_core[] =
 {
     '[', 'h', 'z', 'a', '0', '0', ']', 0x0A,
-    0x00, 0x00, 0x01, 0x00, // size
-    0x00, 0x00, 0x00, 0x00, // name
-    0x00, 0x00, 0x00, 0x00, // const128_count
-    0x00, 0x00, 0x00, 0x00, // const64_count
-    0x00, 0x00, 0x00, 0x00, // const32_count
-    0x00, 0x00, 0x00, 0x00, // data_size
-    0x00, 0x00, 0x00, 0x00, // data_block_count
-    0x00, 0x00, 0x00, 0x00, // proc_count
-    0x00, 0x00, 0x00, 0x00, // target_block_count
-    0x00, 0x00, 0x00, 0x00, // target_count
-    0x00, 0x00, 0x00, 0x00, // insn_count
+    C32(0x100),                 // size
+    C32(0),                     // name
+    C32(0),                     // const128_count
+    C32(0),                     // const64_count
+    C32(0),                     // const32_count
+    C32(0),                     // data_size
+    C32(0),                     // data_block_count
+    C32(0),                     // proc_count
+    C32(0),                     // target_block_count
+    C32(0),                     // target_count
+    C32(0),                     // insn_count
+
+    /* proc 00 */
+    C32(0),                     // insn start
+    C32(0),                     // target block start
+    C32(0),                     // const32_start
+    C32(0),                     // const64_start
+    C32(0),                     // const128_start
+    C32(0),                     // name
+
+    /* insn table */
+    C16(HZAO_HALT), C16(0), C16(0), C16(0), // halt
 };
+#undef C16
+#undef C32
 
 /****************************************************************************/
 /*                                                                          */
@@ -853,32 +870,36 @@ static hza_error_t C41_CALL safe_alloc
 static hza_error_t mod00_load
 (
     hza_context_t * hc,
-    void * data,
+    void const * data,
     size_t len
 )
 {
     hza_mod00_hdr_t lhdr;
 
-    if (len < sizeof(hza_mod00_hdr_t))
+    if (len < HZA_MOD00_MAGIC_LEN + sizeof(hza_mod00_hdr_t))
     {
         E("not enough data ($Xz)", len);
         return hc->hza_error = HZAE_MOD00_TRUNC;
     }
 
-    if (!C41_MEM_EQUAL(data, HZA_MOD00_MAGIC, 8))
+    if (!C41_MEM_EQUAL(data, HZA_MOD00_MAGIC, HZA_MOD00_MAGIC_LEN))
     {
         E("bad magic!");
         return hc->hza_error = HZAE_MOD00_MAGIC;
     }
 
-    C41_MEM_COPY(&lhdr, data, sizeof(hza_mod00_hdr_t));
-    c41_bswap32_array(&lhdr.size, (sizeof(hza_mod00_hdr_t) - 8) / 4);
+    C41_MEM_COPY(&lhdr, C41_PTR_OFS(data, HZA_MOD00_MAGIC_LEN), 
+                 sizeof(hza_mod00_hdr_t));
+#if C41_LITTLE_ENDIAN
+    c41_read_u32be_array((uint32_t *) &lhdr, 
+                         C41_PTR_OFS(data, HZA_MOD00_MAGIC_LEN),
+                         sizeof(hza_mod00_hdr_t) / 4);
+#endif
     if (lhdr.size > len)
     {
         E("not enough data: header size = $Xd, raw size = $Xz", lhdr.size, len);
         return hc->hza_error = HZAE_MOD00_TRUNC;
     }
-
 
     F("no code");
     return hc->hza_error = HZAF_NO_CODE;
