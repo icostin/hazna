@@ -25,6 +25,7 @@ enum hza_error_enum
     HZAE_PROC_INDEX,
     HZAE_MOD00_TRUNC,
     HZAE_MOD00_MAGIC,
+    HZAE_MOD00_CORRUPT,
 
     HZA_FATAL = 0x80,
     HZAF_BUG,
@@ -277,10 +278,10 @@ struct hza_mod00_hdr_s
     uint32_t    const128_count;
     uint32_t    const64_count;
     uint32_t    const32_count;
+    uint32_t    proc_count;
     uint32_t    data_block_count;
     uint32_t    target_block_count;
     uint32_t    target_count;
-    uint32_t    proc_count;
     uint32_t    insn_count;
     uint32_t    data_size;
 

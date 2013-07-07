@@ -216,6 +216,10 @@ static hza_error_t destroy_mod_name_cells
 );
 
 /* mod00_load **************************************************************/
+/**
+ * Loads a module.
+ * Should be called with module mutex locked.
+ */
 static hza_error_t mod00_load
 (
     hza_context_t * hc,
@@ -230,17 +234,17 @@ static hza_error_t mod00_load
 static uint8_t mod00_core[] =
 {
     '[', 'h', 'z', 'a', '0', '0', ']', 0x0A,
-    C32(0x6C),                  // size
+    C32(0x64),                  // size
     C32(0),                     // name
     C32(0),                     // const128_count
     C32(0),                     // const64_count
     C32(0),                     // const32_count
-    C32(0),                     // data_size
-    C32(0),                     // data_block_count
     C32(0),                     // proc_count
+    C32(0),                     // data_block_count
     C32(0),                     // target_block_count
     C32(0),                     // target_count
     C32(1),                     // insn_count
+    C32(0),                     // data_size
 
     /* proc 00 */
     C32(0),                     // insn start
@@ -296,6 +300,7 @@ HAZNA_API char const * C41_CALL hza_error_name (hza_error_t e)
         X(HZAE_PROC_INDEX);
         X(HZAE_MOD00_TRUNC);
         X(HZAE_MOD00_MAGIC);
+        X(HZAE_MOD00_CORRUPT);
 
         X(HZAF_BUG);
         X(HZAF_NO_CODE);
@@ -882,9 +887,12 @@ static hza_error_t mod00_load
 )
 {
     hza_mod00_hdr_t lhdr;
-    uint32_t n;
+    hza_module_t * m;
+    hza_error_t e;
+    uint32_t ofs, n;
+    size_t z;
 
-    n = HZA_MOD00_MAGIC_LEN + sizeof(hza_mod00_hdr_t);
+    n = ofs = HZA_MOD00_MAGIC_LEN + sizeof(hza_mod00_hdr_t);
     if (len < n)
     {
         E("not enough data ($Xz)", len);
@@ -930,6 +938,13 @@ static hza_error_t mod00_load
     }
     n += lhdr.const32_count << 2;
 
+    if (lhdr.proc_count >= ((len - n) / sizeof(hza_mod00_proc_t)))
+    {
+        E("not enough data");
+        return hc->hza_error = HZAE_MOD00_TRUNC;
+    }
+    n += (lhdr.proc_count + 1) * sizeof(hza_mod00_proc_t);
+
     if (lhdr.data_block_count >= ((len - n) >> 2))
     {
         E("not enough data");
@@ -951,13 +966,6 @@ static hza_error_t mod00_load
     }
     n += lhdr.target_count << 2;
 
-    if (lhdr.proc_count >= ((len - n) / sizeof(hza_mod00_proc_t)))
-    {
-        E("not enough data");
-        return hc->hza_error = HZAE_MOD00_TRUNC;
-    }
-    n += (lhdr.proc_count + 1) * sizeof(hza_mod00_proc_t);
-
     if (lhdr.insn_count > ((len - n) >> 4))
     {
         E("not enough data");
@@ -975,7 +983,23 @@ static hza_error_t mod00_load
         n += lhdr.data_size;
         E("module size mismatch: declared: $Xd, computed: $Xd",
           lhdr.size, n);
+        return hc->hza_error = HZAE_MOD00_TRUNC;
     }
+
+    z = n - sizeof(hza_mod00_hdr_t) + sizeof(hza_module_t);
+    z += lhdr.proc_count * sizeof(hza_proc_t);
+    e = safe_alloc(hc, z);
+    if (e)
+    {
+        E("failed allocating module storage $Xz", z);
+        return e;
+    }
+
+    m = hc->args.realloc.ptr;
+    m->proc_table = (void *) (m + 1);
+
+
+
 
     F("no code");
     return hc->hza_error = HZAF_NO_CODE;
