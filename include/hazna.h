@@ -296,7 +296,7 @@ struct hza_mod00_proc_s
     uint32_t    const32_start;
     uint32_t    const64_start;
     uint32_t    const128_start;
-    uint32_t    name;
+    uint32_t    name; // data block index
 };
 
 struct hza_mod_name_cell_s
@@ -313,16 +313,24 @@ struct hza_module_s
     hza_proc_t * proc_table;
     hza_insn_t * insn_table;
     uint32_t * target_table;
-    uint32_t * const32_table;
-    uint64_t * const64_table;
     hza_uint128_t * const128_table;
-    uint32_t * target_block_start_table;
+    uint64_t * const64_table;
+    uint32_t * const32_table;
+    uint8_t * data;
+    uint32_t * data_block_start_table; // [data_block_count + 1]
+    uint32_t * target_block_start_table; // [target_block_count + 1]
     hza_context_t * owner;
 
+    uint32_t const128_count;
+    uint32_t const64_count;
+    uint32_t const32_count;
     uint32_t proc_count;
     uint32_t insn_count;
     uint32_t target_count;
     uint32_t target_block_count;
+    uint32_t data_block_count;
+    uint32_t data_size;
+
     uint32_t module_id;
     uint32_t task_count; // number of tasks that have imported this module
 };
@@ -334,7 +342,7 @@ struct hza_proc_s
     uint64_t * const64_table;
     hza_uint128_t * const128_table;
     uint32_t * target_block_start_table;
-    uint32_t entry; // index in module->insn_table to insn that start execution
+    uint32_t insn_start; // index in module->insn_table to insn that start execution
     uint32_t const32_start;
     uint32_t const64_start;
     uint32_t const128_start;

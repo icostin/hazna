@@ -997,9 +997,27 @@ static hza_error_t mod00_load
 
     m = hc->args.realloc.ptr;
     m->proc_table = (void *) (m + 1);
+    m->proc_count = lhdr.proc_count;
+    m->const128_table = (void *) (m->proc_table + lhdr.proc_count);
+    m->const128_count = lhdr.const128_count;
+    m->const64_table = (void *) (m->const128_table + lhdr.const128_count);
+    m->const64_count = lhdr.const64_count;
+    m->const32_table = (void *) (m->const64_table + lhdr.const64_count);
+    m->const32_count = lhdr.const32_count;
 
+    m->data_block_start_table =
+        (void *) (m->const32_table + lhdr.const32_count);
+    m->data_block_count = lhdr.data_block_count;
+    m->target_block_start_table =
+        (void *) (m->data_block_start_table + lhdr.data_block_count + 1);
+    m->target_block_count = lhdr.target_block_count;
 
+    m->insn_table =
+        (void *) (m->target_block_start_table + m->target_block_count);
+    m->insn_count = lhdr.insn_count;
 
+    m->data = (void *) (m->insn_table + m->insn_count);
+    m->data_size = lhdr.data_size;
 
     F("no code");
     return hc->hza_error = HZAF_NO_CODE;
