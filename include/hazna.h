@@ -402,6 +402,5 @@ HAZNA_API hza_error_t C41_CALL hza_finish
     hza_context_t * hc
 );
 
-
 #endif /* _HZA_H_ */
 

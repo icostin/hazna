@@ -887,6 +887,7 @@ static hza_error_t mod00_load
 )
 {
     hza_mod00_hdr_t lhdr;
+    hza_mod00_proc_t * pt;
     hza_module_t * m;
     hza_error_t e;
     uint32_t ofs, n;
@@ -917,74 +918,43 @@ static hza_error_t mod00_load
     }
 
     len = lhdr.size;
-    if (lhdr.const128_count > ((len - n) >> 4))
-    {
-        E("not enough data");
-        return hc->hza_error = HZAE_MOD00_TRUNC;
-    }
+#define CHECK(_cond) \
+    if ((_cond)) ; else { E("not enough data"); \
+        return hc->hza_error = HZAE_MOD00_TRUNC; }
+
+    CHECK(lhdr.const128_count <= ((len - n) >> 4));
     n += lhdr.const128_count << 4;
 
-    if (lhdr.const64_count > ((len - n) >> 3))
-    {
-        E("not enough data");
-        return hc->hza_error = HZAE_MOD00_TRUNC;
-    }
+    CHECK(lhdr.const64_count <= ((len - n) >> 3));
     n += lhdr.const64_count << 3;
 
-    if (lhdr.const32_count > ((len - n) >> 2))
-    {
-        E("not enough data");
-        return hc->hza_error = HZAE_MOD00_TRUNC;
-    }
+    CHECK(lhdr.const32_count <= ((len - n) >> 2));
     n += lhdr.const32_count << 2;
 
-    if (lhdr.proc_count >= ((len - n) / sizeof(hza_mod00_proc_t)))
-    {
-        E("not enough data");
-        return hc->hza_error = HZAE_MOD00_TRUNC;
-    }
+    CHECK(lhdr.proc_count < ((len - n) / sizeof(hza_mod00_proc_t)));
     n += (lhdr.proc_count + 1) * sizeof(hza_mod00_proc_t);
 
-    if (lhdr.data_block_count >= ((len - n) >> 2))
-    {
-        E("not enough data");
-        return hc->hza_error = HZAE_MOD00_TRUNC;
-    }
+    CHECK(lhdr.data_block_count < ((len - n) >> 2));
     n += (lhdr.data_block_count + 1) << 2;
 
-    if (lhdr.target_block_count >= ((len - n) >> 2))
-    {
-        E("not enough data");
-        return hc->hza_error = HZAE_MOD00_TRUNC;
-    }
+    CHECK(lhdr.target_block_count < ((len - n) >> 2));
     n += (lhdr.target_block_count + 1) << 2;
 
-    if (lhdr.target_count >= ((len - n) >> 2))
-    {
-        E("not enough data");
-        return hc->hza_error = HZAE_MOD00_TRUNC;
-    }
+    CHECK(lhdr.target_count < ((len - n) >> 2));
     n += lhdr.target_count << 2;
 
-    if (lhdr.insn_count > ((len - n) >> 4))
-    {
-        E("not enough data");
-        return hc->hza_error = HZAE_MOD00_TRUNC;
-    }
+    CHECK(lhdr.insn_count <= ((len - n) >> 4));
     n += lhdr.insn_count << 4;
 
     if (lhdr.data_size != len - n)
     {
-        if (lhdr.data_size > len - n)
-        {
-            E("not enough data");
-            return hc->hza_error = HZAE_MOD00_TRUNC;
-        }
+        CHECK(lhdr.data_size <= len - n);
         n += lhdr.data_size;
         E("module size mismatch: declared: $Xd, computed: $Xd",
           lhdr.size, n);
         return hc->hza_error = HZAE_MOD00_TRUNC;
     }
+    n += lhdr.data_size;
 
     z = n - sizeof(hza_mod00_hdr_t) + sizeof(hza_module_t);
     z += lhdr.proc_count * sizeof(hza_proc_t);
@@ -1005,8 +975,10 @@ static hza_error_t mod00_load
     m->const32_table = (void *) (m->const64_table + lhdr.const64_count);
     m->const32_count = lhdr.const32_count;
 
-    m->data_block_start_table =
-        (void *) (m->const32_table + lhdr.const32_count);
+    pt = (void *) (m->const32_table + lhdr.const32_count);
+
+    m->data_block_start_table = (void *) (pt + lhdr.proc_count + 1);
+        
     m->data_block_count = lhdr.data_block_count;
     m->target_block_start_table =
         (void *) (m->data_block_start_table + lhdr.data_block_count + 1);
