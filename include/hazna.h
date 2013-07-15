@@ -296,9 +296,9 @@ struct hza_mod00_proc_s
 {
     uint32_t    insn_start;
     uint32_t    target_block_start;
-    uint32_t    const32_start;
-    uint32_t    const64_start;
     uint32_t    const128_start;
+    uint32_t    const64_start;
+    uint32_t    const32_start;
     uint32_t    name; // data block index
 };
 
@@ -336,6 +336,7 @@ struct hza_module_s
 
     uint32_t module_id;
     uint32_t task_count; // number of tasks that have imported this module
+    size_t size; // size in memory
 };
 
 struct hza_proc_s

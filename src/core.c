@@ -231,6 +231,7 @@ static hza_error_t mod00_load
     ((_v) >> 24), ((_v) >> 16) & 0xFF, ((_v) >> 8) & 0xFF, (_v) & 0xFF
 #define C16(_v) ((_v) >> 8), ((_v) & 0xFF)
 
+/* mod00_core ***************************************************************/
 static uint8_t mod00_core[] =
 {
     '[', 'h', 'z', 'a', '0', '0', ']', 0x0A,
@@ -240,32 +241,42 @@ static uint8_t mod00_core[] =
     C32(0),                     // const128_count
     C32(0),                     // const64_count
     C32(0),                     // const32_count
-    C32(0),                     // proc_count
-    C32(0),                     // data_block_count
+    C32(1),                     // proc_count
+    C32(2),                     // data_block_count
     C32(0),                     // target_block_count
     C32(0),                     // target_count
     C32(1),                     // insn_count
-    C32(0),                     // data_size
+    C32(4),                     // data_size
     C32(0),                     // reserved0
     C32(0),                     // reserved1
 
     /* proc 00 */
     C32(0),                     // insn start
     C32(0),                     // target block start
-    C32(0),                     // const32_start
-    C32(0),                     // const64_start
     C32(0),                     // const128_start
+    C32(0),                     // const64_start
+    C32(0),                     // const32_start
     C32(0),                     // name
     /* proc 01 */
     C32(1),                     // insn start
     C32(0),                     // target block start
-    C32(0),                     // const32_start
-    C32(0),                     // const64_start
     C32(0),                     // const128_start
+    C32(0),                     // const64_start
+    C32(0),                     // const32_start
     C32(0),                     // name
+
+    C32(0),                     // data block offset #0
+    C32(0),                     // data block offset #1
+    C32(4),                     // data block offset #2
+
+    C32(0),                     // target block #0
 
     /* insn table */
     C16(HZAO_HALT), C16(0), C16(0), C16(0), // halt
+
+    /* data block #1 */
+    'c', 'o', 'r', 'e',
+    
 };
 #undef C16
 #undef C32
@@ -766,7 +777,6 @@ static int C41_CALL find_mod_name_cell
     return c;
 }
 
-
 /* alloc_mod_name_cell ******************************************************/
 static hza_error_t C41_CALL alloc_mod_name_cell
 (
@@ -897,6 +907,7 @@ static hza_error_t mod00_load
     uint32_t n, i;
     size_t z;
 
+    D("len = $Xz", len);
     n = sizeof(hza_mod00_hdr_t);
     if (len < n)
     {
@@ -919,35 +930,56 @@ static hza_error_t mod00_load
         return hc->hza_error = HZAE_MOD00_TRUNC;
     }
 
-    len = lhdr.size;
 #define CHECK(_cond) \
     if ((_cond)) ; else { E("not enough data"); \
         return hc->hza_error = HZAE_MOD00_TRUNC; }
 
+    D("size:                    $Xd", lhdr.size);
+    D("checksum:                $Xd", lhdr.checksum);
+    D("name:                    $Xd", lhdr.name);
+    D("const128 count:          $Xd", lhdr.const128_count);
+    D("const64 count:           $Xd", lhdr.const64_count);
+    D("const32 count:           $Xd", lhdr.const32_count);
+    D("proc count:              $Xd", lhdr.proc_count);
+    D("data block count:        $Xd", lhdr.data_block_count);
+    D("target block count:      $Xd", lhdr.target_block_count);
+    D("target count:            $Xd", lhdr.target_count);
+    D("insn count:              $Xd", lhdr.insn_count);
+    D("data size:               $Xd", lhdr.data_size);
+
+    D("const128 offset:         $Xd", n);
     CHECK(lhdr.const128_count <= ((len - n) >> 4));
     n += lhdr.const128_count << 4;
 
+    D("const64 offset:          $Xd", n);
     CHECK(lhdr.const64_count <= ((len - n) >> 3));
     n += lhdr.const64_count << 3;
 
+    D("const32 offset:          $Xd", n);
     CHECK(lhdr.const32_count <= ((len - n) >> 2));
     n += lhdr.const32_count << 2;
 
+    D("proc offset:             $Xd", n);
     CHECK(lhdr.proc_count < ((len - n) / sizeof(hza_mod00_proc_t)));
     n += (lhdr.proc_count + 1) * sizeof(hza_mod00_proc_t);
 
+    D("data block offset:       $Xd", n);
     CHECK(lhdr.data_block_count < ((len - n) >> 2));
     n += (lhdr.data_block_count + 1) << 2;
 
+    D("target block offset:     $Xd", n);
     CHECK(lhdr.target_block_count < ((len - n) >> 2));
     n += (lhdr.target_block_count + 1) << 2;
 
+    D("target offset:           $Xd", n);
     CHECK(lhdr.target_count < ((len - n) >> 2));
     n += lhdr.target_count << 2;
 
-    CHECK(lhdr.insn_count <= ((len - n) >> 4));
-    n += lhdr.insn_count << 4;
+    D("insn offset:             $Xd", n);
+    CHECK(lhdr.insn_count <= ((len - n) >> 3));
+    n += lhdr.insn_count << 3;
 
+    D("data offset:             $Xd", n);
     if (lhdr.data_size != len - n)
     {
         CHECK(lhdr.data_size <= len - n);
@@ -958,6 +990,9 @@ static hza_error_t mod00_load
     }
     n += lhdr.data_size;
 
+#undef CHECK
+
+    /* allocate module */
     z = n - sizeof(hza_mod00_hdr_t) + sizeof(hza_module_t);
     z += lhdr.proc_count * sizeof(hza_proc_t);
     e = safe_alloc(hc, z);
@@ -966,10 +1001,13 @@ static hza_error_t mod00_load
         E("failed allocating module storage $Xz", z);
         return e;
     }
-
     m = hc->args.realloc.ptr;
+    m->size = z;
+
+    /* set pointers */
     m->proc_table = (void *) (m + 1);
     m->proc_count = lhdr.proc_count;
+
     m->const128_table = (void *) (m->proc_table + lhdr.proc_count);
     m->const128_count = lhdr.const128_count;
     m->const64_table = (void *) (m->const128_table + lhdr.const128_count);
@@ -986,8 +1024,10 @@ static hza_error_t mod00_load
         (void *) (m->data_block_start_table + lhdr.data_block_count + 1);
     m->target_block_count = lhdr.target_block_count;
 
-    m->insn_table =
-        (void *) (m->target_block_start_table + m->target_block_count);
+    m->target_table = 
+        (void *) (m->target_block_start_table + lhdr.target_block_count + 1);
+
+    m->insn_table = (void *) (m->target_table + m->target_count);
     m->insn_count = lhdr.insn_count;
 
     m->data = (void *) (m->insn_table + m->insn_count);
@@ -995,12 +1035,14 @@ static hza_error_t mod00_load
 
     p = C41_PTR_OFS(data, sizeof(hza_mod00_hdr_t));
 
+    /* deserialising 128-bit constants */
     for (i = 0; i < lhdr.const128_count; ++i, p += 0x10)
     {
         m->const128_table[i].high = c41_read_u64be(p);
         m->const128_table[i].low = c41_read_u64be(p + 8);
     }
 
+    /* deserialising 64-bit constants */
     for (i = 0; i < lhdr.const64_count; ++i, p += 8)
         m->const64_table[i] = c41_read_u64be(p);
 
@@ -1010,8 +1052,68 @@ static hza_error_t mod00_load
         + lhdr.data_block_count + 1 
         + lhdr.target_block_count + 1
         + lhdr.target_count;
+
+    /* deserialising 32-bit ints */
     c41_read_u32be_array(m->const32_table, p, n);
     p += n * 4;
+
+    /* deserialising 16-bit ints (instructions) */
+    c41_read_u16be_array((uint16_t *) m->insn_table, p, lhdr.insn_count * 4);
+    p += lhdr.insn_count * 8;
+
+    /* copy 8-bit data */
+    C41_MEM_COPY(m->data, p, n);
+
+#define CHECK(_cond) \
+    if ((_cond)) ; else { E("bad data"); \
+        return hc->hza_error = HZAE_MOD00_CORRUPT; }
+
+    CHECK(pt[0].insn_start == 0);
+    CHECK(pt[0].target_block_start == 0);
+    CHECK(pt[0].const128_start == 0);
+    CHECK(pt[0].const64_start == 0);
+    CHECK(pt[0].const32_start == 0);
+
+    /* check proc start indexes */
+    for (i = 0; i < lhdr.proc_count; ++i)
+    {
+        CHECK(pt[i].insn_start <= pt[i + 1].insn_start);
+        CHECK(pt[i].target_block_start <= pt[i + 1].target_block_start);
+        CHECK(pt[i].const128_start <= pt[i + 1].const128_start);
+        CHECK(pt[i].const64_start <= pt[i + 1].const64_start);
+        CHECK(pt[i].const32_start <= pt[i + 1].const32_start);
+        CHECK(pt[i].name < lhdr.data_block_count);
+    }
+    CHECK(pt[i].insn_start == lhdr.insn_count);
+    CHECK(pt[i].target_block_start == lhdr.target_block_count);
+    CHECK(pt[i].const128_start == lhdr.const128_count);
+    CHECK(pt[i].const64_start == lhdr.const64_count);
+    CHECK(pt[i].const32_start == lhdr.const32_count);
+    CHECK(pt[i].name == 0);
+
+    /* check data block start indexes */
+    CHECK(lhdr.data_block_count >= 1);
+    CHECK(m->data_block_start_table[0] == 0);
+    CHECK(m->data_block_start_table[1] == 0);
+    for (i = 1; i < m->data_block_count; ++i)
+    {
+        CHECK(m->data_block_start_table[i]
+              < m->data_block_start_table[i + 1]);
+    }
+    CHECK(m->data_block_start_table[i] == lhdr.data_size);
+
+    /* check target block start indexes */
+    CHECK(m->target_block_start_table[0] == 0);
+    for (i = 0; i < m->target_block_count; ++i)
+    {
+        CHECK(m->target_block_start_table[i]
+              < m->target_block_start_table[i + 1]);
+    }
+    CHECK(m->target_block_start_table[i] == lhdr.target_count);
+
+    /* todo: check procs, targets, insns */
+
+#undef CHECK
 
     F("no code");
     return hc->hza_error = HZAF_NO_CODE;
