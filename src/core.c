@@ -235,6 +235,7 @@ static uint8_t mod00_core[] =
 {
     '[', 'h', 'z', 'a', '0', '0', ']', 0x0A,
     C32(0x64),                  // size
+    C32(0x11223344),            // checksum
     C32(0),                     // name
     C32(0),                     // const128_count
     C32(0),                     // const64_count
@@ -245,6 +246,8 @@ static uint8_t mod00_core[] =
     C32(0),                     // target_count
     C32(1),                     // insn_count
     C32(0),                     // data_size
+    C32(0),                     // reserved0
+    C32(0),                     // reserved1
 
     /* proc 00 */
     C32(0),                     // insn start
@@ -889,11 +892,12 @@ static hza_error_t mod00_load
     hza_mod00_hdr_t lhdr;
     hza_mod00_proc_t * pt;
     hza_module_t * m;
+    uint8_t * p;
     hza_error_t e;
-    uint32_t ofs, n;
+    uint32_t n, i;
     size_t z;
 
-    n = ofs = HZA_MOD00_MAGIC_LEN + sizeof(hza_mod00_hdr_t);
+    n = sizeof(hza_mod00_hdr_t);
     if (len < n)
     {
         E("not enough data ($Xz)", len);
@@ -906,11 +910,9 @@ static hza_error_t mod00_load
         return hc->hza_error = HZAE_MOD00_MAGIC;
     }
 
-    C41_MEM_COPY(&lhdr, C41_PTR_OFS(data, HZA_MOD00_MAGIC_LEN),
-                 sizeof(hza_mod00_hdr_t));
-    c41_read_u32be_array((uint32_t *) &lhdr,
+    c41_read_u32be_array((uint32_t *) &lhdr.size,
                          C41_PTR_OFS(data, HZA_MOD00_MAGIC_LEN),
-                         sizeof(hza_mod00_hdr_t) / 4);
+                         (sizeof(hza_mod00_hdr_t) - HZA_MOD00_MAGIC_LEN) / 4);
     if (lhdr.size > len)
     {
         E("not enough data: header size = $Xd, raw size = $Xz", lhdr.size, len);
@@ -990,6 +992,26 @@ static hza_error_t mod00_load
 
     m->data = (void *) (m->insn_table + m->insn_count);
     m->data_size = lhdr.data_size;
+
+    p = C41_PTR_OFS(data, sizeof(hza_mod00_hdr_t));
+
+    for (i = 0; i < lhdr.const128_count; ++i, p += 0x10)
+    {
+        m->const128_table[i].high = c41_read_u64be(p);
+        m->const128_table[i].low = c41_read_u64be(p + 8);
+    }
+
+    for (i = 0; i < lhdr.const64_count; ++i, p += 8)
+        m->const64_table[i] = c41_read_u64be(p);
+
+    /* compute how many 32-bit ints are to be deserialised */
+    n = lhdr.const32_count 
+        + (lhdr.proc_count + 1) * (sizeof(hza_mod00_proc_t) / 4)
+        + lhdr.data_block_count + 1 
+        + lhdr.target_block_count + 1
+        + lhdr.target_count;
+    c41_read_u32be_array(m->const32_table, p, n);
+    p += n * 4;
 
     F("no code");
     return hc->hza_error = HZAF_NO_CODE;

@@ -271,19 +271,22 @@ struct hza_uint128_s
 
 struct hza_mod00_hdr_s
 {
-    //uint8_t     magic[8];
-    //uint32_t    checksum;
-    uint32_t    size;
-    uint32_t    name;
-    uint32_t    const128_count;
-    uint32_t    const64_count;
-    uint32_t    const32_count;
-    uint32_t    proc_count;
-    uint32_t    data_block_count;
-    uint32_t    target_block_count;
-    uint32_t    target_count;
-    uint32_t    insn_count;
-    uint32_t    data_size;
+    /* 0x00 */  uint8_t     magic[HZA_MOD00_MAGIC_LEN];
+    /* 0x08 */  uint32_t    size;
+    /* 0x0C */  uint32_t    checksum;
+    /* 0x10 */  uint32_t    name;
+    /* 0x14 */  uint32_t    const128_count;
+    /* 0x18 */  uint32_t    const64_count;
+    /* 0x1C */  uint32_t    const32_count;
+    /* 0x20 */  uint32_t    proc_count;
+    /* 0x24 */  uint32_t    data_block_count;
+    /* 0x28 */  uint32_t    target_block_count;
+    /* 0x2C */  uint32_t    target_count;
+    /* 0x30 */  uint32_t    insn_count;
+    /* 0x34 */  uint32_t    data_size;
+    /* 0x38 */  uint32_t    reserved0;
+    /* 0x3C */  uint32_t    reserved1;
+    /* 0x40 */
 
     // hza_uint128_t[const128_count]            const128_table
     // uint64_t[const64_count]                  const64_table
