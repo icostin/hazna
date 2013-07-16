@@ -290,6 +290,20 @@ struct hza_mod00_hdr_s
 
     // hza_uint128_t[const128_count]            const128_table
     // uint64_t[const64_count]                  const64_table
+/*
+ * mod00 format:
+ *  header
+ *  const128    const128_count * 16 bytes
+ *  const64     const64_count * 8 bytes
+ *  const32     const32_count * 4 bytes
+ *  proc        (proc_count + 1) * sizeof(mod00_proc)
+ *  data_block  (data_block_count + 1) * 4 bytes
+ *  target_block (target_block_count + 1) * 4 bytes
+ *  target      target_count * 4 bytes
+ *  insn        insn_count * 8 bytes
+ *  data        data_size bytes
+ */
+
 };
 
 struct hza_mod00_proc_s

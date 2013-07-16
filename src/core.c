@@ -130,6 +130,14 @@ static hza_error_t C41_CALL safe_alloc
     size_t size
 );
 
+/* safe_free ****************************************************************/
+static hza_error_t C41_CALL safe_free
+(
+    hza_context_t * hc,
+    void * ptr,
+    size_t size
+);
+
 #if 0
 /* insn_reg_bits ************************************************************/
 /**
@@ -888,7 +896,18 @@ static hza_error_t C41_CALL safe_alloc
     size_t size
 )
 {
-    return safe_realloc_table(hc, NULL, size, 1, 0);
+    return safe_realloc_table(hc, NULL, 1, size, 0);
+}
+
+/* safe_free ****************************************************************/
+static hza_error_t C41_CALL safe_free
+(
+    hza_context_t * hc,
+    void * ptr,
+    size_t size
+)
+{
+    return safe_realloc_table(hc, ptr, 1, 0, size);
 }
 
 /* mod00_load ***************************************************************/
@@ -904,7 +923,7 @@ static hza_error_t mod00_load
     hza_module_t * m;
     uint8_t * p;
     hza_error_t e;
-    uint32_t n, i;
+    uint32_t n, i, j;
     size_t z;
 
     D("len = $Xz", len);
@@ -1004,7 +1023,7 @@ static hza_error_t mod00_load
     m = hc->args.realloc.ptr;
     m->size = z;
 
-    /* set pointers */
+    /* set table pointers */
     m->proc_table = (void *) (m + 1);
     m->proc_count = lhdr.proc_count;
 
@@ -1065,8 +1084,7 @@ static hza_error_t mod00_load
     C41_MEM_COPY(m->data, p, n);
 
 #define CHECK(_cond) \
-    if ((_cond)) ; else { E("bad data"); \
-        return hc->hza_error = HZAE_MOD00_CORRUPT; }
+    if ((_cond)) ; else { E("corrupt data"); goto l_corrupted; }
 
     CHECK(pt[0].insn_start == 0);
     CHECK(pt[0].target_block_start == 0);
@@ -1111,12 +1129,36 @@ static hza_error_t mod00_load
     }
     CHECK(m->target_block_start_table[i] == lhdr.target_count);
 
-    /* todo: check procs, targets, insns */
+    /* todo: check proc targets & insns */
+    for (i = 0; i < lhdr.proc_count; ++i)
+    {
+        uint32_t te;
+        
+        /* validate all targets from all target blocks that belong to 
+         * current proc */
+        j = m->target_block_start_table[pt[i].target_block_start];
+        te = m->target_block_start_table[pt[i + 1].target_block_start];
+        for (; j < te; ++j)
+        {
+            uint32_t tgt = m->target_table[j];
+            CHECK(tgt >= pt[i].insn_start && tgt < pt[i + 1].insn_start);
+        }
 
+        /* validate all instructions from current proc */
+    }
 #undef CHECK
 
     F("no code");
     return hc->hza_error = HZAF_NO_CODE;
+l_corrupted:
+    e = safe_free(hc, m, z);
+    if (e)
+    {
+        F("failed freeing module (load failed due to corrupt data): $s = $Ui",
+          hza_error_name(e), e);
+        return e;
+    }
+    return hc->hza_error = HZAE_MOD00_CORRUPT;
 }
 
 #if 0
