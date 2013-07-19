@@ -223,7 +223,8 @@ static hza_error_t destroy_mod_name_cells
 /**
  * Loads a module.
  * Should be called with module mutex locked.
- */
+ * The allocated module is returned in hc->args.realloc.ptr
+ **/
 static hza_error_t mod00_load
 (
     hza_context_t * hc,
@@ -376,10 +377,9 @@ static void log_msg
     if (smte) LME("failed locking log mutex ($i)", smte);
 
     va_start(va, fmt);
-    if (c41_io_fmt(w->log_io, "$c[$s:$s:$Ui] ", "NFEWID"[level],
-                   func, src, line) < 0 ||
-        c41_io_vfmt(w->log_io, fmt, va) < 0 ||
-        c41_io_fmt(w->log_io, "\n") < 0)
+    if (c41_io_fmt(w->log_io, "$c: ", "NFEWID"[level]) < 0
+        || c41_io_vfmt(w->log_io, fmt, va) < 0
+        || c41_io_fmt(w->log_io, " [$s:$s:$Ui]\n", func, src, line) < 0)
     {
         va_end(va);
         LME("failed writing log message");
@@ -413,7 +413,6 @@ static hza_error_t init_logging
         hc->smt_error = smte;
         return (hc->hza_error = HZAE_LOG_MUTEX_INIT);
     }
-    I("initing world $#G4p (log level $i)", w, log_level);
     w->init_state |= HZA_INIT_LOG_MUTEX;
 
     return 0;
@@ -529,6 +528,7 @@ HAZNA_API hza_error_t C41_CALL hza_init
             e = init_logging(hc, log_io, log_level);
             if (e) break;
         }
+        I("initing world $#G4p (log level $i)", w, w->log_level);
 
         smte = c41_smt_mutex_init(smt, w->world_mutex);
         if (smte)
@@ -568,6 +568,8 @@ HAZNA_API hza_error_t C41_CALL hza_init
             E("failed loading 'core' module: $s = $i", hza_error_name(e), e);
             break;
         }
+
+        mnc->module = hc->args.realloc.ptr;
 
 #if 0
         {
@@ -672,6 +674,8 @@ HAZNA_API hza_error_t C41_CALL hza_finish
 {
     hza_world_t * w = hc->world;
     c41_smt_t * smt = w->smt;
+    hza_module_t * m;
+    c41_np_t * np;
     int mae, smte, dirty;
     hza_error_t e;
 
@@ -693,6 +697,7 @@ HAZNA_API hza_error_t C41_CALL hza_finish
     /* destroy the world */
     I("ending world $#G4p...", w);
 
+    /* destroy module name tree */
     if (w->module_name_tree.root)
     {
         e = destroy_mod_name_cells(hc, w->module_name_tree.root);
@@ -700,6 +705,19 @@ HAZNA_API hza_error_t C41_CALL hza_finish
         {
             F("failed destroying mod name cell tree: $s = $i",
               hza_error_name(e), e);
+            return e;
+        }
+    }
+
+    /* destroy modules */
+    for (np = w->module_list.next; np != &w->module_list;)
+    {
+        m = (void *) np;
+        np = np->next;
+        e = safe_free(hc, m, m->size);
+        if (e)
+        {
+            F("failed freeing module at $Xp: $s = $i", m, hza_error_name(e), e);
             return e;
         }
     }
@@ -855,10 +873,17 @@ static hza_error_t C41_CALL realloc_table_locked
 {
     hza_world_t * w = hc->world;
     int mae;
+    D("realloc in: ptr=$p, item_size=$z, new_count=$z, old_count=$z",
+      hc->args.realloc.ptr,
+      hc->args.realloc.item_size,
+      hc->args.realloc.new_count,
+      hc->args.realloc.old_count);
+
     mae = c41_ma_realloc_array(&w->mac.ma, (void * *) &hc->args.realloc.ptr,
                                hc->args.realloc.item_size,
                                hc->args.realloc.new_count,
                                hc->args.realloc.old_count);
+    D("realloc out: mae=$Ui, ptr=$p", mae, hc->args.realloc.ptr);
     if (mae)
     {
         E("failed reallocating table: ma error $Ui", mae);
@@ -918,6 +943,7 @@ static hza_error_t mod00_load
     hza_mod00_hdr_t lhdr;
     hza_mod00_proc_t * pt;
     hza_module_t * m;
+    hza_world_t * w = hc->world;
     uint8_t * p;
     hza_error_t e;
     uint32_t n, i, j;
@@ -1005,8 +1031,9 @@ static hza_error_t mod00_load
 #undef CHECK
 
     /* allocate module */
-    z = n - sizeof(hza_mod00_hdr_t) + sizeof(hza_module_t);
-    z += lhdr.proc_count * sizeof(hza_proc_t);
+    z = n - sizeof(hza_mod00_hdr_t) + sizeof(hza_module_t) 
+        + lhdr.proc_count * sizeof(hza_proc_t);
+    D("allocating $Xz for module", z);
     e = safe_alloc(hc, z);
     if (e)
     {
@@ -1040,6 +1067,8 @@ static hza_error_t mod00_load
 
     m->data = (void *) (m->insn_table + m->insn_count);
     m->data_size = lhdr.data_size;
+    D("m=$p, end=$p, end-m=$z, z=$z", m, m->data + m->data_size, 
+      (size_t) C41_PTR_DIFF(m->data + m->data_size, m), z);
 
     p = C41_PTR_OFS(data, sizeof(hza_mod00_hdr_t));
 
@@ -1069,7 +1098,7 @@ static hza_error_t mod00_load
     p += lhdr.insn_count * 8;
 
     /* copy 8-bit data */
-    C41_MEM_COPY(m->data, p, n);
+    C41_MEM_COPY(m->data, p, lhdr.data_size);
 
 #define CHECK(_cond) \
     if ((_cond)) ; else { E("corrupt data"); goto l_corrupted; }
@@ -1111,7 +1140,7 @@ static hza_error_t mod00_load
     /* todo: check proc targets & insns */
     for (i = 0; i < lhdr.proc_count; ++i)
     {
-        uint32_t rlen;
+        uint32_t rlen = 0;
         hza_proc_t * proc = m->proc_table + i;
 
         proc->insn_table = m->insn_table + pt[i].insn_start;
@@ -1143,7 +1172,7 @@ static hza_error_t mod00_load
             rl = insn_check(proc->insn_table + j);
             if (rl < 0)
             {
-                E("invalid insn $Xd: $s ($Xw) $Xw $Xw $Xw\n",
+                E("invalid insn $Xd: $s ($Xw) $Xw $Xw $Xw",
                   j, hza_opcode_name(proc->insn_table[j].opcode),
                   proc->insn_table[j].opcode,
                   proc->insn_table[j].a,
@@ -1153,11 +1182,19 @@ static hza_error_t mod00_load
             }
             if (rlen < (uint32_t) rl) rlen = rl;
         }
+        proc->reg_size = rlen;
+        D("proc $.3Xd reg_size:    $.5Xd", i, rlen);
     }
 #undef CHECK
 
-    F("no code");
-    return hc->hza_error = HZAF_NO_CODE;
+    /* valid module. init remaining fields. */
+    C41_DLIST_APPEND(w->module_list, m, links);
+    m->module_id = w->module_id_seed++;
+    m->task_count = 0;
+    m->size = z;
+
+    return 0;
+
 l_corrupted:
     e = safe_free(hc, m, z);
     if (e)
