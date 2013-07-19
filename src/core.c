@@ -138,18 +138,14 @@ static hza_error_t C41_CALL safe_free
     size_t size
 );
 
-#if 0
-/* insn_reg_bits ************************************************************/
 /**
  * Computes the minimum number of bits in the register space to allow running
  * the given instruction.
  */
-static uint_t insn_reg_bits
+static int32_t insn_check
 (
     hza_insn_t * insn
 );
-
-#endif
 
 /* find_mod_name_cell *******************************************************/
 /**
@@ -243,7 +239,7 @@ static hza_error_t mod00_load
 static uint8_t mod00_core[] =
 {
     '[', 'h', 'z', 'a', '0', '0', ']', 0x0A,
-    C32(0x64),                  // size
+    C32(0x88),                  // size
     C32(0x11223344),            // checksum
     C32(0),                     // name
     C32(0),                     // const128_count
@@ -251,23 +247,24 @@ static uint8_t mod00_core[] =
     C32(0),                     // const32_count
     C32(1),                     // proc_count
     C32(2),                     // data_block_count
-    C32(0),                     // target_block_count
     C32(0),                     // target_count
     C32(1),                     // insn_count
     C32(4),                     // data_size
     C32(0),                     // reserved0
     C32(0),                     // reserved1
+    C32(0),                     // reserved2
 
     /* proc 00 */
     C32(0),                     // insn start
-    C32(0),                     // target block start
+    C32(0),                     // target start
     C32(0),                     // const128_start
     C32(0),                     // const64_start
     C32(0),                     // const32_start
     C32(0),                     // name
-    /* proc 01 */
+
+    /* proc 01 - END */
     C32(1),                     // insn start
-    C32(0),                     // target block start
+    C32(0),                     // target start
     C32(0),                     // const128_start
     C32(0),                     // const64_start
     C32(0),                     // const32_start
@@ -275,16 +272,16 @@ static uint8_t mod00_core[] =
 
     C32(0),                     // data block offset #0
     C32(0),                     // data block offset #1
-    C32(4),                     // data block offset #2
+    C32(4),                     // data block offset #2 - END
 
-    C32(0),                     // target block #0
+    /* target table - empty */
 
     /* insn table */
     C16(HZAO_HALT), C16(0), C16(0), C16(0), // halt
 
     /* data block #1 */
     'c', 'o', 'r', 'e',
-    
+
 };
 #undef C16
 #undef C32
@@ -943,16 +940,6 @@ static hza_error_t mod00_load
     c41_read_u32be_array((uint32_t *) &lhdr.size,
                          C41_PTR_OFS(data, HZA_MOD00_MAGIC_LEN),
                          (sizeof(hza_mod00_hdr_t) - HZA_MOD00_MAGIC_LEN) / 4);
-    if (lhdr.size > len)
-    {
-        E("not enough data: header size = $Xd, raw size = $Xz", lhdr.size, len);
-        return hc->hza_error = HZAE_MOD00_TRUNC;
-    }
-
-#define CHECK(_cond) \
-    if ((_cond)) ; else { E("not enough data"); \
-        return hc->hza_error = HZAE_MOD00_TRUNC; }
-
     D("size:                    $Xd", lhdr.size);
     D("checksum:                $Xd", lhdr.checksum);
     D("name:                    $Xd", lhdr.name);
@@ -961,10 +948,20 @@ static hza_error_t mod00_load
     D("const32 count:           $Xd", lhdr.const32_count);
     D("proc count:              $Xd", lhdr.proc_count);
     D("data block count:        $Xd", lhdr.data_block_count);
-    D("target block count:      $Xd", lhdr.target_block_count);
     D("target count:            $Xd", lhdr.target_count);
     D("insn count:              $Xd", lhdr.insn_count);
     D("data size:               $Xd", lhdr.data_size);
+
+    if (lhdr.size > len)
+    {
+        E("not enough data: header size = $Xd, raw size = $Xz", lhdr.size, len);
+        return hc->hza_error = HZAE_MOD00_TRUNC;
+    }
+    len = lhdr.size;
+
+#define CHECK(_cond) \
+    if ((_cond)) ; else { E("not enough data"); \
+        return hc->hza_error = HZAE_MOD00_TRUNC; }
 
     D("const128 offset:         $Xd", n);
     CHECK(lhdr.const128_count <= ((len - n) >> 4));
@@ -985,10 +982,6 @@ static hza_error_t mod00_load
     D("data block offset:       $Xd", n);
     CHECK(lhdr.data_block_count < ((len - n) >> 2));
     n += (lhdr.data_block_count + 1) << 2;
-
-    D("target block offset:     $Xd", n);
-    CHECK(lhdr.target_block_count < ((len - n) >> 2));
-    n += (lhdr.target_block_count + 1) << 2;
 
     D("target offset:           $Xd", n);
     CHECK(lhdr.target_count < ((len - n) >> 2));
@@ -1037,14 +1030,10 @@ static hza_error_t mod00_load
     pt = (void *) (m->const32_table + lhdr.const32_count);
 
     m->data_block_start_table = (void *) (pt + lhdr.proc_count + 1);
-        
     m->data_block_count = lhdr.data_block_count;
-    m->target_block_start_table =
-        (void *) (m->data_block_start_table + lhdr.data_block_count + 1);
-    m->target_block_count = lhdr.target_block_count;
 
-    m->target_table = 
-        (void *) (m->target_block_start_table + lhdr.target_block_count + 1);
+    m->target_table =
+        (void *) (m->data_block_start_table + lhdr.data_block_count + 1);
 
     m->insn_table = (void *) (m->target_table + m->target_count);
     m->insn_count = lhdr.insn_count;
@@ -1066,10 +1055,9 @@ static hza_error_t mod00_load
         m->const64_table[i] = c41_read_u64be(p);
 
     /* compute how many 32-bit ints are to be deserialised */
-    n = lhdr.const32_count 
+    n = lhdr.const32_count
         + (lhdr.proc_count + 1) * (sizeof(hza_mod00_proc_t) / 4)
-        + lhdr.data_block_count + 1 
-        + lhdr.target_block_count + 1
+        + lhdr.data_block_count + 1
         + lhdr.target_count;
 
     /* deserialising 32-bit ints */
@@ -1087,7 +1075,7 @@ static hza_error_t mod00_load
     if ((_cond)) ; else { E("corrupt data"); goto l_corrupted; }
 
     CHECK(pt[0].insn_start == 0);
-    CHECK(pt[0].target_block_start == 0);
+    CHECK(pt[0].target_start == 0);
     CHECK(pt[0].const128_start == 0);
     CHECK(pt[0].const64_start == 0);
     CHECK(pt[0].const32_start == 0);
@@ -1095,15 +1083,15 @@ static hza_error_t mod00_load
     /* check proc start indexes */
     for (i = 0; i < lhdr.proc_count; ++i)
     {
-        CHECK(pt[i].insn_start <= pt[i + 1].insn_start);
-        CHECK(pt[i].target_block_start <= pt[i + 1].target_block_start);
+        CHECK(pt[i].insn_start < pt[i + 1].insn_start);
+        CHECK(pt[i].target_start <= pt[i + 1].target_start);
         CHECK(pt[i].const128_start <= pt[i + 1].const128_start);
         CHECK(pt[i].const64_start <= pt[i + 1].const64_start);
         CHECK(pt[i].const32_start <= pt[i + 1].const32_start);
         CHECK(pt[i].name < lhdr.data_block_count);
     }
     CHECK(pt[i].insn_start == lhdr.insn_count);
-    CHECK(pt[i].target_block_start == lhdr.target_block_count);
+    CHECK(pt[i].target_start == lhdr.target_count);
     CHECK(pt[i].const128_start == lhdr.const128_count);
     CHECK(pt[i].const64_start == lhdr.const64_count);
     CHECK(pt[i].const32_start == lhdr.const32_count);
@@ -1120,31 +1108,51 @@ static hza_error_t mod00_load
     }
     CHECK(m->data_block_start_table[i] == lhdr.data_size);
 
-    /* check target block start indexes */
-    CHECK(m->target_block_start_table[0] == 0);
-    for (i = 0; i < m->target_block_count; ++i)
-    {
-        CHECK(m->target_block_start_table[i]
-              < m->target_block_start_table[i + 1]);
-    }
-    CHECK(m->target_block_start_table[i] == lhdr.target_count);
-
     /* todo: check proc targets & insns */
     for (i = 0; i < lhdr.proc_count; ++i)
     {
-        uint32_t te;
+        uint32_t rlen;
+        hza_proc_t * proc = m->proc_table + i;
+
+        proc->insn_table = m->insn_table + pt[i].insn_start;
+        proc->insn_count = pt[i + 1].insn_start - pt[i].insn_start;
+
+        proc->const128_table = m->const128_table + pt[i].const128_start;
+        proc->const128_count = pt[i + 1].const128_start - pt[i].const128_start;
         
-        /* validate all targets from all target blocks that belong to 
+        proc->const64_table = m->const64_table + pt[i].const64_start;
+        proc->const64_count = pt[i + 1].const64_start - pt[i].const64_start;
+
+        proc->const32_table = m->const32_table + pt[i].const32_start;
+        proc->const32_count = pt[i + 1].const32_start - pt[i].const32_start;
+
+        proc->target_table = m->target_table + pt[i].target_start;
+        proc->target_count = pt[i + 1].target_start - pt[i].target_start;
+
+        /* validate all targets from all target blocks that belong to
          * current proc */
-        j = m->target_block_start_table[pt[i].target_block_start];
-        te = m->target_block_start_table[pt[i + 1].target_block_start];
-        for (; j < te; ++j)
+        for (j = 0; j < proc->target_count; ++j)
         {
-            uint32_t tgt = m->target_table[j];
-            CHECK(tgt >= pt[i].insn_start && tgt < pt[i + 1].insn_start);
+            CHECK(proc->target_table[j] < proc->insn_count);
         }
 
         /* validate all instructions from current proc */
+        for (j = 0; j < proc->insn_count; ++j)
+        {
+            int32_t rl;
+            rl = insn_check(proc->insn_table + j);
+            if (rl < 0)
+            {
+                E("invalid insn $Xd: $s ($Xw) $Xw $Xw $Xw\n",
+                  j, hza_opcode_name(proc->insn_table[j].opcode),
+                  proc->insn_table[j].opcode,
+                  proc->insn_table[j].a,
+                  proc->insn_table[j].b,
+                  proc->insn_table[j].c);
+                goto l_corrupted;
+            }
+            if (rlen < (uint32_t) rl) rlen = rl;
+        }
     }
 #undef CHECK
 
@@ -1161,17 +1169,17 @@ l_corrupted:
     return hc->hza_error = HZAE_MOD00_CORRUPT;
 }
 
-#if 0
-/* insn_reg_bits ************************************************************/
-static uint_t insn_reg_bits
+/* insn_check ***************************************************************/
+static int32_t insn_check
 (
     hza_insn_t * insn
 )
 {
-    switch (insn->opcode)
+    switch (HZA_OPCODE_CLASS(insn->opcode))
     {
-    default:
+    case HZAOC_NNN:
         return 0;
     }
+    return -1;
 }
-#endif
+
