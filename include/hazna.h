@@ -90,16 +90,33 @@ enum hza_operand_types
 #define HZAOC_x1E
 #define HZAOC_x1F
 
+#define HZAS_1 0
+#define HZAS_2 1
+#define HZAS_4 2
+#define HZAS_8 3
+#define HZAS_16 4
+#define HZAS_32 5
+#define HZAS_64 6
+#define HZAS_128 7
+
 #define HZA_OPCODE(_class, _index) ((_class) | ((_index) << 5))
-#define HZA_OPCODE1(_class, _fn, _pri_size) \
+#define HZA_OPCODE1(_class, _pri_size, _fn) \
     (HZA_OPCODE((_class), ((_fn) << 3) | (_pri_size)))
-#define HZA_OPCODE2(_class, _fn, _pri_size, _sec_size) \
+#define HZA_OPCODE2(_class, _pri_size, _sec_size, _fn) \
     (HZA_OPCODE((_class), ((_fn) << 6) | ((_sec_size) << 3) | (_pri_size)))
 
 #define HZAO_NOP                HZA_OPCODE(HZAOC_NNN, 0x000)
 #define HZAO_HALT               HZA_OPCODE(HZAOC_NNN, 0x001)
+#define HZAO_RET                HZA_OPCODE(HZAOC_NNN, 0x002)
+
+#define HZAO_DEBUG_OUT_16       HZA_OPCODE1(HZAOC_RNN, HZAS_16, 0x000)
+#define HZAO_DEBUG_OUT_32       HZA_OPCODE1(HZAOC_RNN, HZAS_32, 0x000)
+
+#define HZAO_INIT_16            HZA_OPCODE1(HZAOC_RNC, HZAS_16, 0x000)
 
 #define HZA_OPCODE_CLASS(_opcode) ((_opcode) & 0x1F)
+#define HZA_OPCODE_PRI_SIZE(_opcode) (((_opcode) >> 5) & 7)
+#define HZA_OPCODE_SEC_SIZE(_opcode) (((_opcode) >> 8) & 7)
 
 /*
  * operand types:
@@ -420,6 +437,7 @@ struct hza_module_s
 
     uint32_t module_id;
     uint32_t task_count; // number of tasks that have imported this module
+    uint32_t ctx_count; // number of contexts holding a pointer to this
     size_t size; // size in memory
 };
 
