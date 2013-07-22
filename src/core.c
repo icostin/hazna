@@ -241,7 +241,7 @@ static uint8_t mod00_core[] =
 {
     /* 0x0000: */ '[', 'h', 'z', 'a', '0', '0', ']', 0x0A,
     /* 0x0008: */ C32(0x100),                  // size (in bytes)
-    /* 0x000C: */ C32(0x11823344),            // checksum
+    /* 0x000C: */ C32(0x11223344),            // checksum
     /* 0x0010: */ C32(0),                     // name
     /* 0x0014: */ C32(0),                     // const128_count
     /* 0x0018: */ C32(0),                     // const64_count
@@ -473,7 +473,7 @@ static hza_error_t run_locked
 }
 
 /* mod_name_cmp *************************************************************/
-static uint_t mod_name_cmp
+static uint_t C41_CALL mod_name_cmp
 (
     void * key,
     void * node_payload,

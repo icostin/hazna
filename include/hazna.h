@@ -508,5 +508,30 @@ HAZNA_API hza_error_t C41_CALL hza_finish
     hza_context_t * hc
 );
 
+/* hza_task_create **********************************************************/
+HAZNA_API hza_error_t C41_CALL hza_task_create
+(
+    hza_context_t * hc,
+    hza_task_t * * tp
+);
+
+/* hza_task_attach **********************************************************/
+HAZNA_API hza_error_t C41_CALL hza_task_attach
+(
+    hza_context_t * hc,
+    hza_task_t * t
+);
+
+/* hza_module_import ********************************************************/
+/**
+ * Takes a loaded module and imports it into the task attached to current
+ * context.
+ **/
+HAZNA_API hza_error_t C41_CALL hza_module_import
+(
+    hza_context_t * hc,
+    hza_module_t 
+);
+
 #endif /* _HZA_H_ */
 
