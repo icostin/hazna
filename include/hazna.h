@@ -51,7 +51,7 @@ enum hza_operand_types
     HZAOT_5, // 32-bit const offset/index
     HZAOT_6, // 64-bit const offset/index
     HZAOT_P, // target-pair for boolean jumps
-    HZAOT_G, // signum triplet of targets 
+    HZAOT_G, // signum triplet of targets
     HZAOT_L, // target-table length
     HZAOT_T, // target-table index
 };
@@ -223,6 +223,7 @@ typedef struct hza_insn_s                       hza_insn_t;
 
 /* hza_mod00_hdr_t **********************************************************/
 typedef struct hza_mod00_hdr_s                  hza_mod00_hdr_t;
+
 /* hza_mod00_proc_t *********************************************************/
 typedef struct hza_mod00_proc_s                 hza_mod00_proc_t;
 
@@ -238,6 +239,7 @@ struct hza_context_s
     union
     {
         uint_t                      context_count;
+        uint32_t                    module_index;
         struct
         {
             void *                      ptr;
@@ -248,10 +250,11 @@ struct hza_context_s
     }                           args;
 };
 
-#define HZA_INIT_WORLD_MUTEX    (1 << 0)
-#define HZA_INIT_LOG_MUTEX      (1 << 1)
-#define HZA_INIT_MODULE_MUTEX   (1 << 2)
-#define HZA_INIT_TASK_MUTEX     (1 << 3)
+#define HZA_INIT_WORLD_MUTEX                    (1 << 0)
+#define HZA_INIT_LOG_MUTEX                      (1 << 1)
+#define HZA_INIT_MODULE_MUTEX                   (1 << 2)
+#define HZA_INIT_TASK_MUTEX                     (1 << 3)
+#define HZA_INIT_TASK_ATTACH_COND               (1 << 4)
 
 struct hza_world_s
 {
@@ -286,6 +289,12 @@ struct hza_world_s
          *  writes to the io stream which can cause interweaving of messages
          *  when writing from multiple threads.
          */
+
+    c41_smt_cond_t *            task_attach_cond;
+        /*< Condition variable on which contexts wait when trying to attach
+         *  a task already attached to a different context
+         */
+
     c41_ma_counter_t            mac;
         /*< Memory allocator used for all resouces managed by a world.
          *  This allocator counts blocks and total size to enable detection
@@ -322,20 +331,59 @@ struct hza_world_s
 
 struct hza_task_s
 {
-    c41_np_t                    links;
-    uint8_t *                   reg_space;
-    hza_frame_t *               frame_table;
-    hza_modmap_t *              module_table; // table of imported modules
-    hza_context_t *             owner; // the context manipulating the task
-    uint_t                      reg_limit; // limit in bytes
-    uint_t                      frame_index;
-    uint_t                      frame_limit;
-    uint_t                      module_count;
-    uint_t                      module_limit;
-    uint32_t                    task_id; // unique id
-    uint32_t                    context_count;
-    uint8_t                     state; // which queue this task is in
-    uint8_t                     kill_req; // kill requested but task is running
+    c41_np_t                    links; /**<
+                                    entry for doubly-linked list corresponding
+                                    to task's state
+                                    */
+    uint8_t *                   reg_space; /**<
+                                    pointer to the register/local space
+                                    */
+    hza_frame_t *               frame_table; /**<
+                                    table of frames referencing the next
+                                    instruction to be executed in each procedure
+                                    that started execution
+                                    */
+    hza_modmap_t *              module_table; /**<
+                                    table of imported modules
+                                    */
+    hza_context_t *             owner; /**<
+                                    the context manipulating the task_id
+                                    */
+    uint_t                      reg_limit; /**<
+                                    number of bytes allocated for reg_space */
+    uint_t                      frame_index; /**<
+                                    index of the frame executing current
+                                    instruction */
+    uint_t                      frame_limit; /**<
+                                    number of frames allocated in frame_table;
+                                    */
+    uint_t                      module_count; /**<
+                                    number of modules imported
+                                    */
+    uint_t                      module_limit; /**<
+                                    number of items allocated in module_table
+                                    */
+    uint32_t                    task_id; /**<
+                                    unique id throughout the life of the world
+                                    */
+    uint32_t                    context_count; /**<
+                                    number of contexts holding a pointer to
+                                    this task
+                                    */
+    uint8_t                     state; /**<
+                                    current state of the task;
+                                    this determines which queue this task is in
+                                    */
+    uint8_t                     kill_req; /**<
+                                    kill requested but task is running;
+                                    this will be replaced later with some sort
+                                    of signal mask where one signal is for kill
+                                    */
+
+    c41_np_t                    context_wait_queue; /**<
+                                    linked list of contexts waiting to attach
+                                    this task
+                                    */
 };
 
 struct hza_frame_s
@@ -509,28 +557,139 @@ HAZNA_API hza_error_t C41_CALL hza_finish
 );
 
 /* hza_task_create **********************************************************/
+/**
+ *  Creates a task and attaches it to current context.
+ *  The task is created in suspended state and has context_count set to 1.
+ */
 HAZNA_API hza_error_t C41_CALL hza_task_create
 (
     hza_context_t * hc,
     hza_task_t * * tp
 );
 
+/* hza_task_ref *************************************************************/
+/**
+ *  Adds a reference to the given task.
+ *  Returns:
+ *      0 = HZA_OK              success
+ *      HZAF_MUTEX_LOCK
+ *      HZAF_MUTEX_UNLOCK
+ *      HZAF_BUG                ref count overflows (only in debug builds)
+ */
+HAZNA_API hza_error_t C41_CALL hza_task_ref
+(
+    hza_context_t * hc,
+    hza_task_t * t
+);
+
+/* hza_task_deref ***********************************************************/
+/**
+ *  Removes a reference from the given task.
+ *  The pointer t can be invalid after this function returns if the task had
+ *  only 1 reference.
+ *  Returns:
+ *      0 = HZA_OK              success
+ *      HZAF_MUTEX_LOCK
+ *      HZAF_MUTEX_UNLOCK
+ *      HZAF_BUG                ref count overflows (only in debug builds)
+ */
+HAZNA_API hza_error_t C41_CALL hza_task_deref
+(
+    hza_context_t * hc,
+    hza_task_t * t
+);
+
 /* hza_task_attach **********************************************************/
+/**
+ *  Attaches the given task to the current context.
+ *  This call is needed to perform certain operations on the task and to
+ *  start executing it.
+ *  If the task is attached to some other context this function will block
+ *  until the task is detached and grabbed by the current context.
+ */
 HAZNA_API hza_error_t C41_CALL hza_task_attach
 (
     hza_context_t * hc,
     hza_task_t * t
 );
 
-/* hza_module_import ********************************************************/
+/* hza_task_detach **********************************************************/
+/**
+ *  Detaches the attached task from the current context, notifying if necessary
+ *  other contexts waiting to attach that task.
+ */
+HAZNA_API hza_error_t C41_CALL hza_task_detach
+(
+    hza_context_t * hc
+);
+
+/* hza_module_by_name *******************************************************/
+HAZNA_API hza_error_t C41_CALL hza_module_by_name
+(
+    hza_context_t * hc,
+    uint8_t const * name,
+    size_t name_len,
+    hza_module_t * * mp
+);
+
+/* hza_module_load **********************************************************/
+HAZNA_API hza_error_t C41_CALL hza_module_load
+(
+    hza_context_t * hc,
+    uint8_t const * data,
+    size_t size,
+    hza_module_t * * mp
+);
+
+/* hza_module_map_name ******************************************************/
+HAZNA_API hza_error_t C41_CALL hza_module_map_name
+(
+    hza_context_t * hc,
+    hza_module_t * m,
+    uint8_t const * name,
+    size_t name_len
+);
+
+/* hza_import ***************************************************************/
 /**
  * Takes a loaded module and imports it into the task attached to current
  * context.
+ * On success it returns 0 and the index of the imported module is stored in
+ * hc->args.module_index
  **/
-HAZNA_API hza_error_t C41_CALL hza_module_import
+HAZNA_API hza_error_t C41_CALL hza_import
 (
     hza_context_t * hc,
-    hza_module_t 
+    hza_module_t * m,
+    uint64_t anchor
+);
+
+/* hza_enter ****************************************************************/
+/**
+ *  Pushes a new frame in the stack of the attached task.
+ *  This can be done only to attached tasks to ensure there is no concurency
+ *  issue with some other context potentially executing the same task.
+ */
+HAZNA_API hza_error_t C41_CALL hza_enter
+(
+    hza_context_t * hc,
+    uint32_t module_index,
+    uint32_t proc_index
+);
+
+/* hza_run ******************************************************************/
+/**
+ *  Executes code in the attached task until the given frame is reached or
+ *  at least iter_count instructions have been executed.
+ *  The iteration count is updated only on certain instructions (usually
+ *  those that change the flow) so execution will likely not stop after exactly 
+ *  iter_count iterations.
+ */
+HAZNA_API hza_error_t C41_CALL hza_run
+(
+    hza_context_t * hc,
+    uint_t frame_stop,
+    uint_t iter_count
 );
 
 #endif /* _HZA_H_ */

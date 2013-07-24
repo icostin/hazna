@@ -35,7 +35,8 @@
 #define EF(_e, ...) \
     L(hc, (_e) < HZA_FATAL ? HZA_LL_ERROR : HZA_LL_FATAL, __VA_ARGS__)
 
-#define WORLD_SIZE (sizeof(hza_world_t) + smt->mutex_size * 4)
+#define WORLD_SIZE \
+    (sizeof(hza_world_t) + smt->mutex_size * 4 + smt->cond_size * 1)
 
 /* static functions *********************************************************/
 
@@ -528,6 +529,7 @@ HAZNA_API hza_error_t C41_CALL hza_init
     w->log_mutex = C41_PTR_OFS(w->world_mutex, smt->mutex_size);
     w->module_mutex = C41_PTR_OFS(w->log_mutex, smt->mutex_size);
     w->task_mutex = C41_PTR_OFS(w->module_mutex, smt->mutex_size);
+    w->task_attach_cond = C41_PTR_OFS(w->task_mutex, smt->mutex_size);
     w->context_count = 1;
     c41_dlist_init(&w->module_list);
 
@@ -574,6 +576,14 @@ HAZNA_API hza_error_t C41_CALL hza_init
             break;
         }
         w->init_state |= HZA_INIT_TASK_MUTEX;
+
+        smte = c41_smt_cond_init(smt, w->task_attach_cond);
+        if (smte)
+        {
+            E("failed initing task attach condition variable ($i)", smte);
+                break;
+        }
+        w->init_state |= HZA_INIT_TASK_ATTACH_COND;
 
         e = get_mod_name_cell(hc, "core", -1, &mnc);
         if (e)
@@ -747,6 +757,17 @@ HAZNA_API hza_error_t C41_CALL hza_finish
     {
         E("******** MEMORY LEAK: count = $z, size = $z = $Xz ********",
           w->mac.count, w->mac.total_size, w->mac.total_size);
+    }
+
+    if ((w->init_state & HZA_INIT_TASK_ATTACH_COND))
+    {
+        smte = c41_smt_cond_finish(smt, w->task_attach_cond);
+        if (smte)
+        {
+            E("failed finishing task attach condition variable ($i)", smte);
+            hc->smt_error = smte;
+            dirty = 1;
+        }
     }
 
     if ((w->init_state & HZA_INIT_WORLD_MUTEX))
