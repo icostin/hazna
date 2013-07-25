@@ -247,6 +247,7 @@ struct hza_context_s
             size_t                      new_count;
             size_t                      old_count;
         }                           realloc;
+        hza_task_t *                task;
     }                           args;
 };
 
@@ -333,18 +334,24 @@ struct hza_task_s
 {
     c41_np_t                    links; /**<
                                     entry for doubly-linked list corresponding
-                                    to task's state
+                                    to task's state;
+                                    this should be accessed while holding the
+                                    task mutex.
                                     */
     uint8_t *                   reg_space; /**<
-                                    pointer to the register/local space
+                                    pointer to the register/local space;
+                                    only the context owning the task should 
+                                    access this;
                                     */
     hza_frame_t *               frame_table; /**<
                                     table of frames referencing the next
                                     instruction to be executed in each procedure
-                                    that started execution
+                                    that started execution;
+                                    only the context owning the task should 
+                                    access this;
                                     */
     hza_modmap_t *              module_table; /**<
-                                    table of imported modules
+                                    table of imported modules;
                                     */
     hza_context_t *             owner; /**<
                                     the context manipulating the task_id

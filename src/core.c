@@ -2,10 +2,10 @@
 #include "../include/hazna.h"
 
 /* internal configurable constants ******************************************/
-#define DEFAULT_STACK_LIMIT 0x10
-#define ABSOLUTE_STACK_LIMIT 0x1000
-#define INIT_IMPORT_LIMIT 2
-#define INIT_REG_SIZE 0x100
+#define INIT_IMPORT_LIMIT       2
+#define INIT_REG_SIZE           0x100
+#define INIT_FRAME_LIMIT        0x10
+#define INIT_MODMAP_LIMIT       8
 
 /* macros *******************************************************************/
 #define L(_hc, _level, ...) \
@@ -233,11 +233,20 @@ static hza_error_t mod00_load
     size_t len
 );
 
+/* task_alloc ***************************************************************/
+/**
+ *  Allocates a task. This should be called with world mutex locked.
+ *  The pointer to the new task is stored in hc->args.task.
+ */
+static hza_error_t C41_CALL task_alloc
+(
+    hza_context_t * hc
+);
+
+/* mod00_core ***************************************************************/
 #define C32(_v) \
     ((_v) >> 24), ((_v) >> 16) & 0xFF, ((_v) >> 8) & 0xFF, (_v) & 0xFF
 #define C16(_v) ((_v) >> 8), ((_v) & 0xFF)
-
-/* mod00_core ***************************************************************/
 static uint8_t mod00_core[] =
 {
     /* 0x0000: */ '[', 'h', 'z', 'a', '0', '0', ']', 0x0A,
@@ -1074,7 +1083,7 @@ static hza_error_t mod00_load
 #undef CHECK
 
     /* allocate module */
-    z = n - sizeof(hza_mod00_hdr_t) + sizeof(hza_module_t) 
+    z = n - sizeof(hza_mod00_hdr_t) + sizeof(hza_module_t)
         + lhdr.proc_count * sizeof(hza_proc_t);
     D("allocating $Xz for module", z);
     e = safe_alloc(hc, z);
@@ -1110,7 +1119,7 @@ static hza_error_t mod00_load
 
     m->data = (void *) (m->insn_table + m->insn_count);
     m->data_size = lhdr.data_size;
-    D("m=$p, end=$p, end-m=$z, z=$z", m, m->data + m->data_size, 
+    D("m=$p, end=$p, end-m=$z, z=$z", m, m->data + m->data_size,
       (size_t) C41_PTR_DIFF(m->data + m->data_size, m), z);
 
     p = C41_PTR_OFS(data, sizeof(hza_mod00_hdr_t));
@@ -1191,7 +1200,7 @@ static hza_error_t mod00_load
 
         proc->const128_table = m->const128_table + pt[i].const128_start;
         proc->const128_count = pt[i + 1].const128_start - pt[i].const128_start;
-        
+
         proc->const64_table = m->const64_table + pt[i].const64_start;
         proc->const64_count = pt[i + 1].const64_start - pt[i].const64_start;
 
@@ -1270,5 +1279,128 @@ static int32_t insn_check
         return a + ps;
     }
     return -1;
+}
+
+/* task_alloc ***************************************************************/
+static hza_error_t C41_CALL task_alloc
+(
+    hza_context_t * hc
+)
+{
+    hza_world_t * w = hc->world;
+    hza_task_t * t;
+    int mae;
+
+    mae = c41_ma_alloc_zero_fill(&w->mac.ma, (void * *) &hc->args.task,
+                                 sizeof(hza_task_t));
+    if (mae)
+    {
+        E("failed allocating memory for new task (ma error $i)", mae);
+        hc->ma_error = mae;
+        return hc->hza_error = HZAE_ALLOC;
+    }
+    t = hc->args.task;
+
+    t->reg_limit = INIT_REG_SIZE;
+    mae = c41_ma_realloc_array(&w->mac.ma, (void * *) &t->reg_space,
+                               1, t->reg_limit, 0);
+    if (mae)
+    {
+        E("failed allocating register space for new task (ma error $i)", mae);
+        hc->ma_error = mae;
+        goto l_free;
+    }
+
+    t->frame_limit = INIT_FRAME_LIMIT;
+    mae = c41_ma_realloc_array(&w->mac.ma, (void * *) &t->frame_table,
+                               sizeof(hza_frame_t), t->frame_limit, 0);
+    if (mae)
+    {
+        E("failed allocating frame table for new task (ma error $i)", mae);
+        hc->ma_error = mae;
+        goto l_free;
+    }
+
+    t->module_limit = INIT_MODMAP_LIMIT;
+    mae = c41_ma_realloc_array(&w->mac.ma, (void * *) &t->module_table,
+                               sizeof(hza_modmap_t), t->module_limit, 0);
+    if (mae)
+    {
+        E("failed allocating module map table for new task (ma error $i)", mae);
+        hc->ma_error = mae;
+        goto l_free;
+    }
+
+    return 0;
+l_free:
+    if (t->module_table)
+    {
+        mae = c41_ma_realloc_array(&w->mac.ma, (void * *) &t->module_table,
+                                   sizeof(hza_modmap_t), 0, t->module_limit);
+        if (mae)
+        {
+            F("error freeing module map table for failed new task "
+              "(ma error $i)", mae);
+            hc->ma_free_error = mae;
+            return hc->hza_error = HZAF_FREE;
+        }
+    }
+    if (t->frame_table)
+    {
+        mae = c41_ma_realloc_array(&w->mac.ma, (void * *) &t->frame_table,
+                                   sizeof(hza_frame_t), 0, t->frame_limit);
+        if (mae)
+        {
+            F("error freeing frame table for failed new task (ma error $i)",
+              mae);
+            hc->ma_free_error = mae;
+            return hc->hza_error = HZAF_FREE;
+        }
+    }
+
+    if (t->reg_space)
+    {
+        mae = c41_ma_realloc_array(&w->mac.ma, (void * *) &t->reg_space,
+                                   1, 0, t->reg_limit);
+        if (mae)
+        {
+            F("error freeing register space for failed new task (ma error $i)",
+              mae);
+            hc->ma_free_error = mae;
+            return hc->hza_error = HZAF_FREE;
+        }
+    }
+
+    mae = c41_ma_free(&w->mac.ma, t, sizeof(hza_task_t));
+    if (mae)
+    {
+        F("error freeing failed new task (ma error $i)", mae);
+        hc->ma_free_error = mae;
+        return hc->hza_error = HZAF_FREE;
+    }
+
+    return hc->hza_error = HZAE_ALLOC;
+}
+
+/* hza_task_create **********************************************************/
+HAZNA_API hza_error_t C41_CALL hza_task_create
+(
+    hza_context_t * hc,
+    hza_task_t * * tp
+)
+{
+    hza_world_t * w = hc->world;
+    hza_task_t * t;
+    hza_error_t e;
+
+    e = run_locked(hc, task_alloc, w->world_mutex);
+    if (e)
+    {
+        E("failed allocating memory for a new task ($s = $i)",
+          hza_error_name(e), e);
+    }
+    *tp = t = hc->args.task;
+
+    return 0;
 }
 
