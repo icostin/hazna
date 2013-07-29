@@ -243,6 +243,27 @@ static hza_error_t C41_CALL task_alloc
     hza_context_t * hc
 );
 
+/* task_free ****************************************************************/
+/**
+ *  Frees task memory. This should be called with world mutex locked.
+ *  The task is passed in hc->args.task.
+ *  This is intended to be called from task_alloc() (with a partially allocated
+ *  task), from hza_task_create() when task_init() fails and from
+ *  hza_task_deref() when there are no refs left to the task.
+ */
+static hza_error_t C41_CALL task_free
+(
+    hza_context_t * hc
+);
+
+/* task_init ****************************************************************/
+/**
+ *  Inits a newly allocated task. This should be called with task mutex locked.
+ */
+static hza_error_t C41_CALL task_init
+(
+    hza_context_t * hc
+);
 /* mod00_core ***************************************************************/
 #define C32(_v) \
     ((_v) >> 24), ((_v) >> 16) & 0xFF, ((_v) >> 8) & 0xFF, (_v) & 0xFF
@@ -609,6 +630,7 @@ HAZNA_API hza_error_t C41_CALL hza_init
             break;
         }
 
+        w->core_module = hc->args.realloc.ptr;
         mnc->module = hc->args.realloc.ptr;
 
 #if 0
@@ -716,7 +738,7 @@ HAZNA_API hza_error_t C41_CALL hza_finish
     c41_smt_t * smt = w->smt;
     hza_module_t * m;
     c41_np_t * np;
-    int mae, smte, dirty;
+    int mae, smte, dirty, ts;
     hza_error_t e;
 
     if ((w->init_state & HZA_INIT_WORLD_MUTEX))
@@ -736,6 +758,25 @@ HAZNA_API hza_error_t C41_CALL hza_finish
 
     /* destroy the world */
     I("ending world $#G4p...", w);
+
+    /* destroy tasks */
+    for (ts = 0; ts < HZA_TASK_STATES; ++ts)
+    {
+        for (np = w->task_list[ts].next; np != &w->task_list[ts];)
+        {
+            hza_task_t * t;
+            t = (void *) np;
+            np = np->next;
+            hc->args.task = t;
+            e = task_free(hc);
+            if (e)
+            {
+                F("failed destroying task $i: $s = $i", t->task_id,
+                  hza_error_name(e), e);
+                return e;
+            }
+        }
+    }
 
     /* destroy module name tree */
     if (w->module_name_tree.root)
@@ -1289,7 +1330,7 @@ static hza_error_t C41_CALL task_alloc
 {
     hza_world_t * w = hc->world;
     hza_task_t * t;
-    int mae;
+    int mae, e;
 
     mae = c41_ma_alloc_zero_fill(&w->mac.ma, (void * *) &hc->args.task,
                                  sizeof(hza_task_t));
@@ -1333,6 +1374,21 @@ static hza_error_t C41_CALL task_alloc
 
     return 0;
 l_free:
+    e = task_free(hc);
+    if (e) return e;
+    return hc->hza_error = HZAE_ALLOC;
+}
+
+/* task_free ****************************************************************/
+static hza_error_t C41_CALL task_free
+(
+    hza_context_t * hc
+)
+{
+    hza_world_t * w = hc->world;
+    hza_task_t * t = hc->args.task;
+    int mae;
+
     if (t->module_table)
     {
         mae = c41_ma_realloc_array(&w->mac.ma, (void * *) &t->module_table,
@@ -1345,6 +1401,7 @@ l_free:
             return hc->hza_error = HZAF_FREE;
         }
     }
+
     if (t->frame_table)
     {
         mae = c41_ma_realloc_array(&w->mac.ma, (void * *) &t->frame_table,
@@ -1378,8 +1435,36 @@ l_free:
         hc->ma_free_error = mae;
         return hc->hza_error = HZAF_FREE;
     }
+    return 0;
+}
 
-    return hc->hza_error = HZAE_ALLOC;
+/* task_init ****************************************************************/
+static hza_error_t C41_CALL task_init
+(
+    hza_context_t * hc
+)
+{
+    hza_world_t * w = hc->world;
+    hza_task_t * t = hc->args.task;
+
+    t->task_id = w->task_id_seed++;
+    t->owner = hc;
+    t->context_count = 1;
+    t->state = HZA_TASK_SUSPENDED;
+    C41_DLIST_APPEND(w->task_list[t->state], t, links);
+
+    t->module_table[0].anchor = 0;
+    t->module_table[0].module = w->core_module;
+    t->module_table[0].task = t;
+    t->module_count = 1;
+
+    t->frame_table[0].proc = w->core_module->proc_table + 0;
+    t->frame_table[0].insn = w->core_module->proc_table[0].insn_table + 0;
+    t->frame_table[0].reg_base = 0;
+
+    c41_dlist_init(&t->context_wait_queue);
+
+    return 0;
 }
 
 /* hza_task_create **********************************************************/
@@ -1398,8 +1483,18 @@ HAZNA_API hza_error_t C41_CALL hza_task_create
     {
         E("failed allocating memory for a new task ($s = $i)",
           hza_error_name(e), e);
+        return e;
     }
+    e = run_locked(hc, task_init, w->task_mutex);
+    if (e)
+    {
+        E("failed initing new task ($s = $i)", hza_error_name(e), e);
+        if (e >= HZA_FATAL) return e;
+        return e;
+    }
+
     *tp = t = hc->args.task;
+    D("task t$.4Hd created ($G4Xp)", t->task_id, t);
 
     return 0;
 }

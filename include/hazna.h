@@ -51,7 +51,7 @@ enum hza_operand_types
     HZAOT_5, // 32-bit const offset/index
     HZAOT_6, // 64-bit const offset/index
     HZAOT_P, // target-pair for boolean jumps
-    HZAOT_G, // signum triplet of targets
+    HZAOT_G, // signum triplet of targets (less than, equal, grater than)
     HZAOT_L, // target-table length
     HZAOT_T, // target-table index
 };
@@ -272,6 +272,9 @@ struct hza_world_s
     c41_rbtree_t                module_name_tree;
         /*< Mapping name->module.
          */
+
+    hza_module_t *              core_module;
+
     c41_smt_t *                 smt; // multithreading interface
         /*< Multithreading interface.
          *  This provides functions to create/destroy/lock/unlock mutexes.
@@ -399,7 +402,9 @@ struct hza_frame_s
     hza_insn_t *                insn;
     uint32_t                    reg_base;
         /*< Must store as offset, not pointer, because the reg_space can be
-         *  reallocated */
+         *  reallocated; the offset is in bytes and is multiple of largest
+         *  register size (128-bits = 16 bytes) 
+         **/
 };
 
 struct hza_modmap_s
@@ -624,6 +629,8 @@ HAZNA_API hza_error_t C41_CALL hza_task_attach
 /**
  *  Detaches the attached task from the current context, notifying if necessary
  *  other contexts waiting to attach that task.
+ *  This call keeps the reference to the task, so the caller must also call
+ *  hza_task_deref() when done with the task.
  */
 HAZNA_API hza_error_t C41_CALL hza_task_detach
 (

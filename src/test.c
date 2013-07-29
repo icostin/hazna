@@ -8,6 +8,8 @@ uint8_t test (c41_io_t * log_io, c41_ma_t * ma, c41_smt_t * smt)
     uint8_t rc;
     hza_error_t hze;
     hza_context_t hcd;
+    hza_task_t * t;
+
     char inited = 0;
     int err_line = 0;
 
@@ -25,6 +27,7 @@ uint8_t test (c41_io_t * log_io, c41_ma_t * ma, c41_smt_t * smt)
         DO(hza_init(&hcd, ma, smt, log_io, HZA_LL_DEBUG));
         inited = 1;
 
+        DO(hza_task_create(&hcd, &t));
     }
     while (0);
     if (inited) hze = hza_finish(&hcd);
