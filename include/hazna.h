@@ -26,12 +26,14 @@ enum hza_error_enum
     HZAE_MOD00_TRUNC,
     HZAE_MOD00_MAGIC,
     HZAE_MOD00_CORRUPT,
+    HZAE_COND_CREATE,
 
     HZA_FATAL = 0x80,
     HZAF_BUG,
     HZAF_NO_CODE,
     HZAF_MUTEX_LOCK,
     HZAF_MUTEX_UNLOCK,
+    HZAF_COND_DESTROY,
     HZAF_WORLD_FREE,
     HZAF_FREE,
     HZAF_ALLOC,
@@ -231,6 +233,7 @@ struct hza_context_s
 {
     hza_world_t *               world;
     hza_task_t *                active_task;
+    c41_smt_cond_t *            cond;
     uint_t                      ma_error;
     uint_t                      ma_free_error;
     uint_t                      smt_error;
@@ -255,7 +258,6 @@ struct hza_context_s
 #define HZA_INIT_LOG_MUTEX                      (1 << 1)
 #define HZA_INIT_MODULE_MUTEX                   (1 << 2)
 #define HZA_INIT_TASK_MUTEX                     (1 << 3)
-#define HZA_INIT_TASK_ATTACH_COND               (1 << 4)
 
 struct hza_world_s
 {
@@ -292,11 +294,6 @@ struct hza_world_s
         /*< Mutex used by logging. Some messages are printed in few distinct
          *  writes to the io stream which can cause interweaving of messages
          *  when writing from multiple threads.
-         */
-
-    c41_smt_cond_t *            task_attach_cond;
-        /*< Condition variable on which contexts wait when trying to attach
-         *  a task already attached to a different context
          */
 
     c41_ma_counter_t            mac;

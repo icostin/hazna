@@ -36,7 +36,7 @@
     L(hc, (_e) < HZA_FATAL ? HZA_LL_ERROR : HZA_LL_FATAL, __VA_ARGS__)
 
 #define WORLD_SIZE \
-    (sizeof(hza_world_t) + smt->mutex_size * 4 + smt->cond_size * 1)
+    (sizeof(hza_world_t) + smt->mutex_size * 4)
 
 /* static functions *********************************************************/
 
@@ -431,7 +431,7 @@ static void log_msg
     va_start(va, fmt);
     if (c41_io_fmt(w->log_io, "$c: ", "NFEWID"[level]) < 0
         || c41_io_vfmt(w->log_io, fmt, va) < 0
-        || c41_io_fmt(w->log_io, " [$s:$s:$Ui]\n", func, src, line) < 0)
+        || c41_io_fmt(w->log_io, "    [$s:$s:$Ui]\n", func, src, line) < 0)
     {
         va_end(va);
         LME("failed writing log message");
@@ -559,7 +559,6 @@ HAZNA_API hza_error_t C41_CALL hza_init
     w->log_mutex = C41_PTR_OFS(w->world_mutex, smt->mutex_size);
     w->module_mutex = C41_PTR_OFS(w->log_mutex, smt->mutex_size);
     w->task_mutex = C41_PTR_OFS(w->module_mutex, smt->mutex_size);
-    w->task_attach_cond = C41_PTR_OFS(w->task_mutex, smt->mutex_size);
     w->context_count = 1;
     c41_dlist_init(&w->module_list);
 
@@ -607,13 +606,6 @@ HAZNA_API hza_error_t C41_CALL hza_init
         }
         w->init_state |= HZA_INIT_TASK_MUTEX;
 
-        smte = c41_smt_cond_init(smt, w->task_attach_cond);
-        if (smte)
-        {
-            E("failed initing task attach condition variable ($i)", smte);
-                break;
-        }
-        w->init_state |= HZA_INIT_TASK_ATTACH_COND;
 
         e = get_mod_name_cell(hc, "core", -1, &mnc);
         if (e)
@@ -632,6 +624,14 @@ HAZNA_API hza_error_t C41_CALL hza_init
 
         w->core_module = hc->args.realloc.ptr;
         mnc->module = hc->args.realloc.ptr;
+
+        smte = c41_smt_cond_create(&hc->cond, smt, &w->mac.ma);
+        if (smte)
+        {
+            e = HZAE_COND_CREATE;
+            E("failed initing context condition variable ($i)", smte);
+            break;
+        }
 
 #if 0
         {
@@ -682,14 +682,27 @@ HAZNA_API hza_error_t C41_CALL hza_init
     return 0;
 }
 
-/* detach_context *******************************************************************/
+/* detach_context ***********************************************************/
 static hza_error_t detach_context
 (
     hza_context_t * hc
 )
 {
     hza_world_t * w = hc->world;
+    int smte;
+
     hc->args.context_count = (w->context_count -= 1);
+    if (hc->cond)
+    {
+        smte = c41_smt_cond_destroy(hc->cond, w->smt, &w->mac.ma);
+        if (smte)
+        {
+            F("failed destroying context condition variable ($i)", smte);
+            hc->smt_error = smte;
+            return hc->hza_error = HZAF_COND_DESTROY;
+        }
+    }
+
     return 0;
 }
 
@@ -807,17 +820,6 @@ HAZNA_API hza_error_t C41_CALL hza_finish
     {
         E("******** MEMORY LEAK: count = $z, size = $z = $Xz ********",
           w->mac.count, w->mac.total_size, w->mac.total_size);
-    }
-
-    if ((w->init_state & HZA_INIT_TASK_ATTACH_COND))
-    {
-        smte = c41_smt_cond_finish(smt, w->task_attach_cond);
-        if (smte)
-        {
-            E("failed finishing task attach condition variable ($i)", smte);
-            hc->smt_error = smte;
-            dirty = 1;
-        }
     }
 
     if ((w->init_state & HZA_INIT_WORLD_MUTEX))
