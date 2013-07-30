@@ -1,6 +1,7 @@
 #ifndef _HZA_H_
 #define _HZA_H_
 
+/* prologue {{{1 */
 #include <c41.h>
 
 #if HAZNA_STATIC
@@ -11,7 +12,7 @@
 #   define HAZNA_API C41_DL_IMPORT
 #endif
 
-/* error codes */
+/* error codes {{{1 */
 enum hza_error_enum
 {
     HZA_OK = 0,
@@ -40,7 +41,13 @@ enum hza_error_enum
     HZAF_OPCODE, // unsupported opcode
 };
 
-/* operand types */
+/* init flags {{{1 */
+#define HZA_INIT_WORLD_MUTEX                    (1 << 0)
+#define HZA_INIT_LOG_MUTEX                      (1 << 1)
+#define HZA_INIT_MODULE_MUTEX                   (1 << 2)
+#define HZA_INIT_TASK_MUTEX                     (1 << 3)
+
+/* operand types {{{1 */
 enum hza_operand_types
 {
     HZAOT_N, // none
@@ -58,7 +65,7 @@ enum hza_operand_types
     HZAOT_T, // target-table index
 };
 
-/* opcode classes */
+/* opcode classes {{{1 */
 #define HZAOC_NNN 0x00 /* nop, halt */
 #define HZAOC_RNN 0x01 /* in, out, debug_out */
 #define HZAOC_RRN 0x02 /* unary ops (neg, not) */
@@ -92,6 +99,7 @@ enum hza_operand_types
 #define HZAOC_x1E
 #define HZAOC_x1F
 
+/* opcode sizes {{{1 */
 #define HZAS_1 0
 #define HZAS_2 1
 #define HZAS_4 2
@@ -101,12 +109,17 @@ enum hza_operand_types
 #define HZAS_64 6
 #define HZAS_128 7
 
+/* opcode macros {{{1 */
 #define HZA_OPCODE(_class, _index) ((_class) | ((_index) << 5))
 #define HZA_OPCODE1(_class, _pri_size, _fn) \
     (HZA_OPCODE((_class), ((_fn) << 3) | (_pri_size)))
 #define HZA_OPCODE2(_class, _pri_size, _sec_size, _fn) \
     (HZA_OPCODE((_class), ((_fn) << 6) | ((_sec_size) << 3) | (_pri_size)))
+#define HZA_OPCODE_CLASS(_opcode) ((_opcode) & 0x1F)
+#define HZA_OPCODE_PRI_SIZE(_opcode) (((_opcode) >> 5) & 7)
+#define HZA_OPCODE_SEC_SIZE(_opcode) (((_opcode) >> 8) & 7)
 
+/* opcodes {{{1 */
 #define HZAO_NOP                HZA_OPCODE(HZAOC_NNN, 0x000)
 #define HZAO_HALT               HZA_OPCODE(HZAOC_NNN, 0x001)
 #define HZAO_RET                HZA_OPCODE(HZAOC_NNN, 0x002)
@@ -115,10 +128,6 @@ enum hza_operand_types
 #define HZAO_DEBUG_OUT_32       HZA_OPCODE1(HZAOC_RNN, HZAS_32, 0x000)
 
 #define HZAO_INIT_16            HZA_OPCODE1(HZAOC_RNC, HZAS_16, 0x000)
-
-#define HZA_OPCODE_CLASS(_opcode) ((_opcode) & 0x1F)
-#define HZA_OPCODE_PRI_SIZE(_opcode) (((_opcode) >> 5) & 7)
-#define HZA_OPCODE_SEC_SIZE(_opcode) (((_opcode) >> 8) & 7)
 
 /*
  * operand types:
@@ -139,7 +148,7 @@ enum hza_operand_types
  *  - RCP
  */
 
-/* log levels */
+/* log levels {{{1 */
 #define HZA_LL_NONE 0
 #define HZA_LL_FATAL 1
 #define HZA_LL_ERROR 2
@@ -147,18 +156,20 @@ enum hza_operand_types
 #define HZA_LL_INFO 4
 #define HZA_LL_DEBUG 5
 
-/* task states */
+/* task states {{{1 */
 #define HZA_TASK_RUNNING        0
 #define HZA_TASK_WAITING        1
 #define HZA_TASK_READY          2
 #define HZA_TASK_SUSPENDED      3
 #define HZA_TASK_STATES         4
 
+/* other constants {{{1 */
 #define HZA_MAX_PROC 0x01000000 // 16M procs per module tops! or else...
 
 #define HZA_MOD00_MAGIC "[hza00]\x0A"
 #define HZA_MOD00_MAGIC_LEN 8
 
+/* forward type declarations {{{1 */
 /* hza_error_t **************************************************************/
 /**
  * Error code.
@@ -229,7 +240,7 @@ typedef struct hza_mod00_hdr_s                  hza_mod00_hdr_t;
 /* hza_mod00_proc_t *********************************************************/
 typedef struct hza_mod00_proc_s                 hza_mod00_proc_t;
 
-struct hza_context_s
+struct hza_context_s /* hza_context_t {{{1 */
 {
     hza_world_t *               world;
     hza_task_t *                active_task;
@@ -254,12 +265,7 @@ struct hza_context_s
     }                           args;
 };
 
-#define HZA_INIT_WORLD_MUTEX                    (1 << 0)
-#define HZA_INIT_LOG_MUTEX                      (1 << 1)
-#define HZA_INIT_MODULE_MUTEX                   (1 << 2)
-#define HZA_INIT_TASK_MUTEX                     (1 << 3)
-
-struct hza_world_s
+struct hza_world_s /* hza_world_t {{{1 */
 {
     c41_np_t                    task_list[HZA_TASK_STATES];
         /*< Task queues.
@@ -330,7 +336,7 @@ struct hza_world_s
          */
 };
 
-struct hza_task_s
+struct hza_task_s /* hza_task_t {{{1 */
 {
     c41_np_t                    links; /**<
                                     entry for doubly-linked list corresponding
@@ -393,7 +399,7 @@ struct hza_task_s
                                     */
 };
 
-struct hza_frame_s
+struct hza_frame_s /* hza_frame_t {{{1 */
 {
     hza_proc_t *                proc;
     hza_insn_t *                insn;
@@ -404,7 +410,7 @@ struct hza_frame_s
          **/
 };
 
-struct hza_modmap_s
+struct hza_modmap_s /* hza_modmap_t {{{1 */
 {
     uint64_t                    anchor;
     /*< usually has a pointer to where the globals are mapped in the
@@ -414,12 +420,12 @@ struct hza_modmap_s
     //uint32_t index; // the index in task's module table
 };
 
-struct hza_uint128_s
+struct hza_uint128_s /* hza_uint128_t {{{1 */
 {
     uint64_t low, high;
 };
 
-struct hza_mod00_hdr_s
+struct hza_mod00_hdr_s /* hza_mod00_hdr_t {{{1 */
 {
     /* 0x00 */  uint8_t     magic[HZA_MOD00_MAGIC_LEN];
     /* 0x08 */  uint32_t    size;
@@ -452,7 +458,7 @@ struct hza_mod00_hdr_s
 
 };
 
-struct hza_mod00_proc_s
+struct hza_mod00_proc_s /* hza_mod00_proc_t {{{1 */
 {
     uint32_t    insn_start;
     uint32_t    target_start;
@@ -462,7 +468,7 @@ struct hza_mod00_proc_s
     uint32_t    name; // data block index
 };
 
-struct hza_mod_name_cell_s
+struct hza_mod_name_cell_s /* hza_mod_name_cell_t {{{1 */
 {
     // c41_rbtree_node_t rbtn;
     hza_module_t * module;
@@ -470,7 +476,7 @@ struct hza_mod_name_cell_s
     uint8_t name[1];
 };
 
-struct hza_module_s
+struct hza_module_s /* hza_module_t {{{1 */
 {
     c41_np_t links;
     hza_proc_t * proc_table;
@@ -498,7 +504,7 @@ struct hza_module_s
     size_t size; // size in memory
 };
 
-struct hza_proc_s
+struct hza_proc_s /* hza_proc_t {{{1 */
 {
     hza_insn_t * insn_table;
     hza_uint128_t * const128_table;
@@ -513,19 +519,19 @@ struct hza_proc_s
     uint16_t reg_size; // size of proc's register space (in bits)
 };
 
-struct hza_insn_s
+struct hza_insn_s /* hza_insn_t {{{1 */
 {
     uint16_t opcode;
     uint16_t a, b, c;
 };
 
-/* hza_lib_name *************************************************************/
+/* hza_lib_name ****************************************************** {{{1 */
 HAZNA_API char const * C41_CALL hza_lib_name ();
 
-/* hza_error_name ***********************************************************/
+/* hza_error_name **************************************************** {{{1 */
 HAZNA_API char const * C41_CALL hza_error_name (hza_error_t e);
 
-/* hza_init *****************************************************************/
+/* hza_init ********************************************************** {{{1 */
 /**
  * Initialises a context and the world.
  * Returns:
@@ -540,7 +546,7 @@ HAZNA_API hza_error_t C41_CALL hza_init
     uint8_t log_level
 );
 
-/* hza_attach ***************************************************************/
+/* hza_attach ******************************************************** {{{1 */
 /**
  * Initialises a context and attaches it to an existing world.
  * Returns:
@@ -552,7 +558,7 @@ HAZNA_API hza_error_t C41_CALL hza_attach
     hza_world_t * w
 );
 
-/* hza_finish ***************************************************************/
+/* hza_finish ******************************************************** {{{1 */
 /**
  * Finishes one context.
  * If this is the last context attached to the world then it will destroy
@@ -565,7 +571,7 @@ HAZNA_API hza_error_t C41_CALL hza_finish
     hza_context_t * hc
 );
 
-/* hza_task_create **********************************************************/
+/* hza_task_create *************************************************** {{{1 */
 /**
  *  Creates a task and attaches it to current context.
  *  The task is created in suspended state and has context_count set to 1.
@@ -576,7 +582,7 @@ HAZNA_API hza_error_t C41_CALL hza_task_create
     hza_task_t * * tp
 );
 
-/* hza_task_ref *************************************************************/
+/* hza_task_ref ****************************************************** {{{1 */
 /**
  *  Adds a reference to the given task.
  *  Returns:
@@ -591,7 +597,7 @@ HAZNA_API hza_error_t C41_CALL hza_task_ref
     hza_task_t * t
 );
 
-/* hza_task_deref ***********************************************************/
+/* hza_task_deref **************************************************** {{{1 */
 /**
  *  Removes a reference from the given task.
  *  The pointer t can be invalid after this function returns if the task had
@@ -608,7 +614,7 @@ HAZNA_API hza_error_t C41_CALL hza_task_deref
     hza_task_t * t
 );
 
-/* hza_task_attach **********************************************************/
+/* hza_task_attach *************************************************** {{{1 */
 /**
  *  Attaches the given task to the current context.
  *  This call is needed to perform certain operations on the task and to
@@ -622,7 +628,7 @@ HAZNA_API hza_error_t C41_CALL hza_task_attach
     hza_task_t * t
 );
 
-/* hza_task_detach **********************************************************/
+/* hza_task_detach *************************************************** {{{1 */
 /**
  *  Detaches the attached task from the current context, notifying if necessary
  *  other contexts waiting to attach that task.
@@ -634,7 +640,7 @@ HAZNA_API hza_error_t C41_CALL hza_task_detach
     hza_context_t * hc
 );
 
-/* hza_module_by_name *******************************************************/
+/* hza_module_by_name ************************************************ {{{1 */
 HAZNA_API hza_error_t C41_CALL hza_module_by_name
 (
     hza_context_t * hc,
@@ -643,7 +649,7 @@ HAZNA_API hza_error_t C41_CALL hza_module_by_name
     hza_module_t * * mp
 );
 
-/* hza_module_load **********************************************************/
+/* hza_module_load *************************************************** {{{1 */
 HAZNA_API hza_error_t C41_CALL hza_module_load
 (
     hza_context_t * hc,
@@ -652,7 +658,7 @@ HAZNA_API hza_error_t C41_CALL hza_module_load
     hza_module_t * * mp
 );
 
-/* hza_module_map_name ******************************************************/
+/* hza_module_map_name *********************************************** {{{1 */
 HAZNA_API hza_error_t C41_CALL hza_module_map_name
 (
     hza_context_t * hc,
@@ -661,7 +667,7 @@ HAZNA_API hza_error_t C41_CALL hza_module_map_name
     size_t name_len
 );
 
-/* hza_import ***************************************************************/
+/* hza_import ******************************************************** {{{1 */
 /**
  * Takes a loaded module and imports it into the task attached to current
  * context.
@@ -675,20 +681,25 @@ HAZNA_API hza_error_t C41_CALL hza_import
     uint64_t anchor
 );
 
-/* hza_enter ****************************************************************/
+/* hza_enter ********************************************************* {{{1 */
 /**
  *  Pushes a new frame in the stack of the attached task.
  *  This can be done only to attached tasks to ensure there is no concurency
  *  issue with some other context potentially executing the same task.
+ *  Parameters:
+ *      reg_shift               number of bits to preserve from the caller
+ *                              register space; must be a multiple of
+ *                              largest reg size (128)
  */
 HAZNA_API hza_error_t C41_CALL hza_enter
 (
     hza_context_t * hc,
     uint32_t module_index,
-    uint32_t proc_index
+    uint32_t proc_index,
+    uint16_t reg_shift
 );
 
-/* hza_run ******************************************************************/
+/* hza_run *********************************************************** {{{1 */
 /**
  *  Executes code in the attached task until the given frame is reached or
  *  at least iter_count instructions have been executed.
@@ -702,6 +713,7 @@ HAZNA_API hza_error_t C41_CALL hza_run
     uint_t frame_stop,
     uint_t iter_count
 );
+/* }}}1 */
 
 #endif /* _HZA_H_ */
 

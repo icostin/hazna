@@ -1466,6 +1466,8 @@ static hza_error_t C41_CALL task_init
 
     c41_dlist_init(&t->context_wait_queue);
 
+    hc->active_task = t;
+
     return 0;
 }
 
@@ -1499,5 +1501,39 @@ HAZNA_API hza_error_t C41_CALL hza_task_create
     D("task t$.4Hd created ($G4Xp)", t->task_id, t);
 
     return 0;
+}
+
+/* hza_enter ****************************************************************/
+HAZNA_API hza_error_t C41_CALL hza_enter
+(
+    hza_context_t * hc,
+    uint32_t module_index,
+    uint32_t proc_index,
+    uint16_t reg_shift
+)
+{
+    hza_task_t * t = hc->active_task;
+    hza_module_t * m;
+    hza_proc_t * p;
+    uint_t fx;
+    uint32_t reg_base;
+
+    DEBUG_CHECK(t);
+    DEBUG_CHECK(module_index < t->module_count);
+    m = t->module_table[module_index].module;
+    DEBUG_CHECK(proc_index < m->proc_count);
+    p = &m->proc_table[proc_index];
+    reg_base = t->frame_table[t->frame_index].reg_base;
+    fx = t->frame_index += 1;
+    if (fx == t->frame_limit)
+    {
+        // extend frame table
+        return hc->hza_error = HZAF_NO_CODE;
+    }
+    t->frame_table[fx].proc = p;
+    t->frame_table[fx].insn = p->insn_table;
+    t->frame_table[fx].reg_base = reg_base + (reg_shift >> 3);
+
+    return hc->hza_error = HZAF_NO_CODE;
 }
 
