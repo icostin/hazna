@@ -82,8 +82,8 @@ enum hza_operand_types
 #define HZAOC_RNP 0x0D /* jump if reg is zero/non-zero */
 #define HZAOC_RRP 0x0E /* cmp reg, reg and jump */
 #define HZAOC_RCP 0x0F /* cmp reg, const and jump */
-#define HZAOC_RRG 0x10 /* cmp-jump with 3 targets (< = >) */
-#define HZAOC_RCG 0x11
+#define HZAOC_RRG 0x10 /* cmp-and-jump reg, reg with 3 targets (< = >) */
+#define HZAOC_RCG 0x11 /* cmp-and-jump reg, ct with 3 target (< = >) */
 #define HZAOC_RLT 0x12 /* table-jump (packed-switch) */
 #define HZAOC_RAN 0x13 /* load/store from address */
 #define HZAOC_RAA 0x14 /* load/store from addr_reg + offset_reg|index_reg */
@@ -110,43 +110,43 @@ enum hza_operand_types
 #define HZAS_128 7
 
 /* opcode macros {{{1 */
-#define HZA_OPCODE(_class, _index) ((_class) | ((_index) << 5))
+#define HZA_OPCODE(_class, _index) (((_class) << 11) | (_index))
 #define HZA_OPCODE1(_class, _pri_size, _fn) \
-    (HZA_OPCODE((_class), ((_fn) << 3) | (_pri_size)))
+    (HZA_OPCODE((_class), ((_pri_size) << 8) | (_fn)))
 #define HZA_OPCODE2(_class, _pri_size, _sec_size, _fn) \
-    (HZA_OPCODE((_class), ((_fn) << 6) | ((_sec_size) << 3) | (_pri_size)))
-#define HZA_OPCODE_CLASS(_opcode) ((_opcode) & 0x1F)
-#define HZA_OPCODE_PRI_SIZE(_opcode) (((_opcode) >> 5) & 7)
-#define HZA_OPCODE_SEC_SIZE(_opcode) (((_opcode) >> 8) & 7)
+    (HZA_OPCODE((_class), ((_pri_size) << 8) | ((_sec_size) << 5) | (_fn)))
+#define HZA_OPCODE_CLASS(_opcode) ((_opcode) >> 11)
+#define HZA_OPCODE_PRI_SIZE(_opcode) (((_opcode) >> 8) & 7)
+#define HZA_OPCODE_SEC_SIZE(_opcode) (((_opcode) >> 5) & 7)
+#define HZA_OPCODE_FNSZ(_opcode) ((_opcode) & 0x7FF)
 
 /* opcodes {{{1 */
+
+/* nnn */
 #define HZAO_NOP                HZA_OPCODE(HZAOC_NNN, 0x000)
 #define HZAO_HALT               HZA_OPCODE(HZAOC_NNN, 0x001)
 #define HZAO_RET                HZA_OPCODE(HZAOC_NNN, 0x002)
 
+/* rnn */
 #define HZAO_DEBUG_OUT_16       HZA_OPCODE1(HZAOC_RNN, HZAS_16, 0x000)
 #define HZAO_DEBUG_OUT_32       HZA_OPCODE1(HZAOC_RNN, HZAS_32, 0x000)
 
+/* rnc */
 #define HZAO_INIT_16            HZA_OPCODE1(HZAOC_RNC, HZAS_16, 0x000)
 
-/*
- * operand types:
- * - N: none
- * - A: 64-bit register (used for addresses)
- * - R: register (of size specified in opcode) offset
- * - S: register (of secondary size specified in opcode) offset
- * - Q: register (of size specified in opcode * 2) offset
- * - C: immediate / const index (depending of size) / target list count
- * - T: target index
- * - P: target list
- *
- * insn types:
- *  - RAA
- *  - RAN
- *  - RAC
- *  - RRT
- *  - RCP
- */
+/* rrc */
+#define HZAO_WRAP_ADD_8         HZA_OPCODE1(HZAOC_RRC, HZAS_8, 0x0000)
+
+/* rnp */
+#define HZAO_BRANCH_ZERO_1      HZA_OPCODE1(HZAOC_RNP, HZAS_8, 0x000)
+#define HZAO_BRANCH_ZERO_2      HZA_OPCODE1(HZAOC_RNP, HZAS_8, 0x000)
+#define HZAO_BRANCH_ZERO_4      HZA_OPCODE1(HZAOC_RNP, HZAS_8, 0x000)
+#define HZAO_BRANCH_ZERO_8      HZA_OPCODE1(HZAOC_RNP, HZAS_8, 0x000)
+#define HZAO_BRANCH_ZERO_16     HZA_OPCODE1(HZAOC_RNP, HZAS_16, 0x000)
+#define HZAO_BRANCH_ZERO_32     HZA_OPCODE1(HZAOC_RNP, HZAS_32, 0x000)
+#define HZAO_BRANCH_ZERO_64     HZA_OPCODE1(HZAOC_RNP, HZAS_64, 0x000)
+#define HZAO_BRANCH_ZERO_128    HZA_OPCODE1(HZAOC_RNP, HZAS_128, 0x000)
+
 
 /* log levels {{{1 */
 #define HZA_LL_NONE 0
@@ -262,6 +262,7 @@ struct hza_context_s /* hza_context_t {{{1 */
             size_t                      old_count;
         }                           realloc;
         hza_task_t *                task;
+        uint_t                  iter_count;
     }                           args;
 };
 
@@ -403,6 +404,7 @@ struct hza_frame_s /* hza_frame_t {{{1 */
 {
     hza_proc_t *                proc;
     hza_insn_t *                insn;
+    uint32_t                    module_index; // task-local mod mapping index
     uint32_t                    reg_base;
         /*< Must store as offset, not pointer, because the reg_space can be
          *  reallocated; the offset is in bytes and is multiple of largest
@@ -516,7 +518,7 @@ struct hza_proc_s /* hza_proc_t {{{1 */
     uint32_t const64_count;
     uint32_t const32_count;
     uint32_t target_count;
-    uint16_t reg_size; // size of proc's register space (in bits)
+    uint16_t reg_size; // size of proc's register space (in bytes)
 };
 
 struct hza_insn_s /* hza_insn_t {{{1 */
@@ -711,7 +713,7 @@ HAZNA_API hza_error_t C41_CALL hza_run
 (
     hza_context_t * hc,
     uint_t frame_stop,
-    uint_t iter_count
+    uint_t iter_limit
 );
 /* }}}1 */
 

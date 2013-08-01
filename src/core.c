@@ -139,15 +139,26 @@ static hza_error_t C41_CALL safe_free
     size_t size
 );
 
+/* insn_check ***************************************************************/
 /**
  * Computes the minimum number of bits in the register space to allow running
  * the given instruction.
  */
 static int32_t insn_check
 (
-    hza_insn_t * insn
+    hza_insn_t * insn,
+    uint32_t task_alloc
 );
 
+/* last_insn_check **********************************************************/
+/**
+ * Checks if the given instruction is valid for the last instruction in the
+ * proc. This means that the flow will not continue to the instruction after it.
+ */
+static int last_insn_check
+(
+    hza_insn_t * insn
+);
 /* find_mod_name_cell *******************************************************/
 /**
  * Builds the tree path in search of the given name.
@@ -271,7 +282,7 @@ static hza_error_t C41_CALL task_init
 static uint8_t mod00_core[] =
 {
     /* 0x0000: */ '[', 'h', 'z', 'a', '0', '0', ']', 0x0A,
-    /* 0x0008: */ C32(0x100),                  // size (in bytes)
+    /* 0x0008: */ C32(0x110),                  // size (in bytes)
     /* 0x000C: */ C32(0x11223344),            // checksum
     /* 0x0010: */ C32(0),                     // name
     /* 0x0014: */ C32(0),                     // const128_count
@@ -280,7 +291,7 @@ static uint8_t mod00_core[] =
     /* 0x0020: */ C32(2),                     // proc_count
     /* 0x0024: */ C32(2),                     // data_block_count
     /* 0x0028: */ C32(0),                     // target_count
-    /* 0x002C: */ C32(0x0D),                  // insn_count
+    /* 0x002C: */ C32(0x0F),                  // insn_count
     /* 0x0030: */ C32(4),                     // data_size
     /* 0x0034: */ C32(0),                     // reserved0
     /* 0x0038: */ C32(0),                     // reserved1
@@ -303,7 +314,7 @@ static uint8_t mod00_core[] =
     /* 0x006C: */ C32(0),                     // name
 
     /* proc 02 - END */
-    /* 0x0070: */ C32(0x0D),                  // insn start
+    /* 0x0070: */ C32(0x0F),                  // insn start
     /* 0x0074: */ C32(0),                     // target start
     /* 0x0078: */ C32(0),                     // const128_start
     /* 0x007C: */ C32(0),                     // const64_start
@@ -323,18 +334,20 @@ static uint8_t mod00_core[] =
     /* 0x00AC: */ C16(HZAO_INIT_16), C16(0x20), C16(0), C16('l'),
     /* 0x00B4: */ C16(HZAO_INIT_16), C16(0x30), C16(0), C16('o'),
     /* 0x00BC: */ C16(HZAO_INIT_16), C16(0x70), C16(0), C16('!'),
-    /* 0x00C4: */ C16(HZAO_DEBUG_OUT_16), C16(0x00), C16(0), C16(0),
-    /* 0x00CC: */ C16(HZAO_DEBUG_OUT_16), C16(0x10), C16(0), C16(0),
-    /* 0x00D4: */ C16(HZAO_DEBUG_OUT_16), C16(0x20), C16(0), C16(0),
+    /* 0x00C4: */ C16(HZAO_INIT_16), C16(0x80), C16(0), C16(10),
+    /* 0x00CC: */ C16(HZAO_DEBUG_OUT_16), C16(0x00), C16(0), C16(0),
+    /* 0x00D4: */ C16(HZAO_DEBUG_OUT_16), C16(0x10), C16(0), C16(0),
     /* 0x00DC: */ C16(HZAO_DEBUG_OUT_16), C16(0x20), C16(0), C16(0),
-    /* 0x00E4: */ C16(HZAO_DEBUG_OUT_16), C16(0x30), C16(0), C16(0),
-    /* 0x00EC: */ C16(HZAO_DEBUG_OUT_16), C16(0x70), C16(0), C16(0),
-    /* 0x00F4: */ C16(HZAO_RET), C16(0), C16(0), C16(0),
+    /* 0x00E4: */ C16(HZAO_DEBUG_OUT_16), C16(0x20), C16(0), C16(0),
+    /* 0x00EC: */ C16(HZAO_DEBUG_OUT_16), C16(0x30), C16(0), C16(0),
+    /* 0x00F4: */ C16(HZAO_DEBUG_OUT_16), C16(0x70), C16(0), C16(0),
+    /* 0x00F4: */ C16(HZAO_DEBUG_OUT_16), C16(0x80), C16(0), C16(0),
+    /* 0x0104: */ C16(HZAO_RET), C16(0), C16(0), C16(0),
 
     /* data block #1 */
-    /* 0x00FC: */ 'c', 'o', 'r', 'e',
+    /* 0x010C: */ 'c', 'o', 'r', 'e',
 
-    /* 0x0100: end */
+    /* 0x0110: end */
 };
 #undef C16
 #undef C32
@@ -393,6 +406,10 @@ HAZNA_API char const * C41_CALL hza_opcode_name (uint16_t o)
     {
         X(HZAO_NOP);
         X(HZAO_HALT);
+        X(HZAO_RET);
+        X(HZAO_DEBUG_OUT_16);
+        X(HZAO_DEBUG_OUT_32);
+        X(HZAO_INIT_16);
     }
     return "HZAO_UNKNOWN";
 #undef X
@@ -580,7 +597,7 @@ HAZNA_API hza_error_t C41_CALL hza_init
             e = init_logging(hc, log_io, log_level);
             if (e) break;
         }
-        I("initing world $#G4p (log level $i)", w, w->log_level);
+        D("initing world $#G4p (log level $i)", w, w->log_level);
 
         smte = c41_smt_mutex_init(smt, w->world_mutex);
         if (smte)
@@ -770,7 +787,7 @@ HAZNA_API hza_error_t C41_CALL hza_finish
     }
 
     /* destroy the world */
-    I("ending world $#G4p...", w);
+    D("ending world $#G4p...", w);
 
     /* destroy tasks */
     for (ts = 0; ts < HZA_TASK_STATES; ++ts)
@@ -1264,7 +1281,14 @@ static hza_error_t mod00_load
         for (j = 0; j < proc->insn_count; ++j)
         {
             int32_t rl;
-            rl = insn_check(proc->insn_table + j);
+            rl = insn_check(proc->insn_table + j, proc->target_count);
+            D("check P$.4Hd.I$.4Hd: $s ($Xw) $Xw $Xw $Xw => reg_size = $.1Xd",
+              i, j, hza_opcode_name(proc->insn_table[j].opcode),
+              proc->insn_table[j].opcode,
+              proc->insn_table[j].a,
+              proc->insn_table[j].b,
+              proc->insn_table[j].c,
+              rl);
             if (rl < 0)
             {
                 E("invalid insn $Xd: $s ($Xw) $Xw $Xw $Xw",
@@ -1277,8 +1301,20 @@ static hza_error_t mod00_load
             }
             if (rlen < (uint32_t) rl) rlen = rl;
         }
-        proc->reg_size = rlen;
-        D("proc $.3Xd reg_size:    $.5Xd", i, rlen);
+        j--;
+        if (last_insn_check(proc->insn_table + j))
+        {
+            E("invalid last insn $Xd: $s ($Xw) $Xw $Xw $Xw",
+              j, hza_opcode_name(proc->insn_table[j].opcode),
+              proc->insn_table[j].opcode,
+              proc->insn_table[j].a,
+              proc->insn_table[j].b,
+              proc->insn_table[j].c);
+            goto l_corrupted;
+        }
+
+        proc->reg_size = rlen >> 3;
+        D("proc $.3Xd reg_size:    $.5Xd bytes", i, rlen);
     }
 #undef CHECK
 
@@ -1305,23 +1341,199 @@ l_corrupted:
 /* insn_check ***************************************************************/
 static int32_t insn_check
 (
-    hza_insn_t * insn
+    hza_insn_t * insn,
+    uint32_t target_count
 )
 {
-    uint32_t a, ps;
-    /* TODO: validate RNN, RNC */
-    switch (HZA_OPCODE_CLASS(insn->opcode))
+    uint32_t a, b, c, ps, rs;
+    uint_t oc;
+
+    oc = HZA_OPCODE_CLASS(insn->opcode);
+
+    /* check operand a */
+    switch (oc)
     {
     case HZAOC_NNN:
-        return 0;
+        rs = 0;
+        break;
+
     case HZAOC_RNN:
+    case HZAOC_RRN:
+    case HZAOC_RRR:
+    case HZAOC_RRC:
+    case HZAOC_RRS:
+    case HZAOC_RRW:
     case HZAOC_RNC:
+    case HZAOC_RNP:
+    case HZAOC_RRP:
+    case HZAOC_RCP:
+    case HZAOC_RRG:
+    case HZAOC_RCG:
+    case HZAOC_RLT:
+    case HZAOC_RAN:
+    case HZAOC_RAA:
+    case HZAOC_RA4:
+    case HZAOC_RA5:
+    case HZAOC_RA6:
         a = insn->a;
         ps = 1 << HZA_OPCODE_PRI_SIZE(insn->opcode);
         if ((a & (ps - 1)) != 0) return -1; // unaligned reg
-        return a + ps;
+        rs = a + ps;
+        break;
+
+    case HZAOC_QRR:
+    case HZAOC_QRC:
+    case HZAOC_QRS:
+    case HZAOC_QRW:
+        a = insn->a;
+        ps = 2 << HZA_OPCODE_PRI_SIZE(insn->opcode);
+        if ((a & (ps - 1)) != 0) return -1; // unaligned reg
+        rs = a + ps;
+        break;
+
+    case HZAOC_SRN:
+        a = insn->a;
+        ps = 1 << HZA_OPCODE_SEC_SIZE(insn->opcode);
+        if ((a & (ps - 1)) != 0) return -1; // unaligned reg
+        rs = a + ps;
+        break;
+    default:
+        return -1;
     }
-    return -1;
+
+    /* check operand b */
+    switch (oc)
+    {
+    case HZAOC_NNN:
+    case HZAOC_RNN:
+    case HZAOC_RNC:
+    case HZAOC_RNP:
+        break;
+        
+    case HZAOC_RRN:
+    case HZAOC_RRR:
+    case HZAOC_RRC:
+    case HZAOC_RRS:
+    case HZAOC_RRW:
+    case HZAOC_RRP:
+    case HZAOC_RRG:
+    case HZAOC_QRR:
+    case HZAOC_QRC:
+    case HZAOC_QRS:
+    case HZAOC_QRW:
+    case HZAOC_SRN:
+        b = insn->b;
+        ps = 2 << HZA_OPCODE_PRI_SIZE(insn->opcode);
+        if ((b & (ps - 1)) != 0) return -1; // unaligned reg
+        ps += b;
+        if (rs < ps) rs = ps;
+        break;
+        
+    case HZAOC_RCP:
+    case HZAOC_RCG:
+        break;
+        
+    case HZAOC_RLT:
+        break;
+        
+    case HZAOC_RAN:
+    case HZAOC_RAA:
+    case HZAOC_RA4:
+    case HZAOC_RA5:
+    case HZAOC_RA6:
+        break;
+        
+    default:
+        return -1;
+    }
+    
+    /* check operand c */
+    switch (oc)
+    {
+    case HZAOC_NNN:
+    case HZAOC_RNN:
+    case HZAOC_RRN:
+    case HZAOC_RAN:
+    case HZAOC_SRN:
+        break;
+        
+    case HZAOC_RRR:
+    case HZAOC_QRR:
+        break;
+        
+    case HZAOC_RRC:
+    case HZAOC_RNC:
+    case HZAOC_QRC:
+        break;
+
+    case HZAOC_RRS:
+    case HZAOC_QRS:
+        break;
+        
+    case HZAOC_RRW:
+    case HZAOC_QRW:
+        break;
+        
+    case HZAOC_RNP:
+    case HZAOC_RRP:
+    case HZAOC_RCP:
+        c = insn->c;
+        if (c + 1 >= target_count) return -1;
+        break;
+        
+    case HZAOC_RRG:
+    case HZAOC_RCG:
+        c = insn->c;
+        if (c + 2 >= target_count) return -1;
+        break;
+        
+    case HZAOC_RLT:
+        break;
+        
+    case HZAOC_RAA:
+        break;
+        
+    case HZAOC_RA4:
+        break;
+        
+    case HZAOC_RA5:
+        break;
+        
+    case HZAOC_RA6:
+        break;
+        
+    default:
+        return -1;
+    }
+
+    return rs;
+}
+
+/* last_insn_check **********************************************************/
+static int last_insn_check
+(
+    hza_insn_t * insn
+)
+{
+    switch (HZA_OPCODE_CLASS(insn->opcode))
+    {
+    case HZAOC_NNN:
+        switch (HZA_OPCODE_FNSZ(insn->opcode))
+        {
+        case HZA_OPCODE_FNSZ(HZAO_RET):
+        case HZA_OPCODE_FNSZ(HZAO_HALT):
+            return 0;
+        }
+        return 1;
+    case HZAOC_RNP:
+    case HZAOC_RRP:
+    case HZAOC_RCP:
+    case HZAOC_RRG:
+    case HZAOC_RCG:
+    case HZAOC_RLT:
+        return 0;
+    }
+    return 1;
 }
 
 /* task_alloc ***************************************************************/
@@ -1516,14 +1728,14 @@ HAZNA_API hza_error_t C41_CALL hza_enter
     hza_module_t * m;
     hza_proc_t * p;
     uint_t fx;
-    uint32_t reg_base;
+    uint32_t reg_base, reg_limit;
 
     DEBUG_CHECK(t);
     DEBUG_CHECK(module_index < t->module_count);
     m = t->module_table[module_index].module;
     DEBUG_CHECK(proc_index < m->proc_count);
     p = &m->proc_table[proc_index];
-    reg_base = t->frame_table[t->frame_index].reg_base;
+    reg_base = t->frame_table[t->frame_index].reg_base + (reg_shift >> 3);
     fx = t->frame_index += 1;
     if (fx == t->frame_limit)
     {
@@ -1532,8 +1744,98 @@ HAZNA_API hza_error_t C41_CALL hza_enter
     }
     t->frame_table[fx].proc = p;
     t->frame_table[fx].insn = p->insn_table;
-    t->frame_table[fx].reg_base = reg_base + (reg_shift >> 3);
+    t->frame_table[fx].module_index = module_index;
+    t->frame_table[fx].reg_base = reg_base;
+    reg_limit = reg_base + p->reg_size;
+    if (reg_limit > t->reg_limit)
+    {
+        // extend reg space
+        return hc->hza_error = HZAF_NO_CODE;
+    }
 
-    return hc->hza_error = HZAF_NO_CODE;
+    return 0;
+}
+
+/* hza_run ******************************************************************/
+HAZNA_API hza_error_t C41_CALL hza_run
+(
+    hza_context_t * hc,
+    uint_t frame_stop,
+    uint_t iter_limit
+)
+{
+    hza_world_t * w = hc->world;
+    hza_task_t * t;
+    hza_proc_t * p;
+    hza_insn_t * i;
+    hza_insn_t * li;
+    hza_frame_t * f;
+    uint8_t * r;
+    uint32_t fx, reg_base;
+    uint_t iter_count;
+
+#define UPDATE_ITER_COUNT() iter_count += li - i
+#define RU16(_bit_ofs) (*(uint16_t *) (r + ((_bit_ofs) >> 3)))
+    t = hc->active_task;
+    DEBUG_CHECK(t);
+
+    fx = t->frame_index;
+    if (fx <= frame_stop) { hc->args.iter_count = 0; return 0; }
+    f = t->frame_table + fx;
+    p = f->proc;
+    li = i = f->insn;
+    reg_base = f->reg_base;
+    r = t->reg_space + reg_base;
+
+    (void) iter_limit;
+    (void) p;
+    for (iter_count = 0;;)
+    {
+        D("t$.4Hd M$.4Hd.P$.4Hd.I$.4Hd: $s ($Xw) $Xw $Xw $Xw",
+          t->task_id, f->module_index,
+          p - t->module_table[f->module_index].module->proc_table,
+          i - p->insn_table,
+          hza_opcode_name(i->opcode), i->opcode, i->a, i->b, i->c);
+        switch (i->opcode)
+        {
+        case HZAO_NOP:
+            break;
+        case HZAO_RET:
+            UPDATE_ITER_COUNT();
+            if (--fx == frame_stop)
+            {
+                t->frame_index = fx;
+                goto l_done;
+            }
+            --f;
+            li = i = f->insn;
+            reg_base = f->reg_base;
+            r = t->reg_space + reg_base;
+            if (iter_count >= iter_limit) goto l_done;
+            break;
+        case HZAO_INIT_16:
+            RU16(i->a) = i->c;
+            break;
+        case HZAO_DEBUG_OUT_16:
+            D("DEBUG_OUT: $c", RU16(i->a));
+            if (w->log_level == HZA_LL_INFO && w->log_io)
+            {
+                c41_io_fmt(w->log_io, "$c", RU16(i->a));
+            }
+            break;
+        case HZAO_BRANCH_ZERO_8:
+            break;
+        default:
+            F("opcode $s ($Xw) is not implemented!",
+              hza_opcode_name(i->opcode), i->opcode);
+            return hc->hza_error = HZAF_NO_CODE;
+        }
+        i++;
+    }
+l_done:
+    hc->args.iter_count = iter_count;
+
+    return 0;
+#undef UPDATE_ITER_COUNT
 }
 
