@@ -282,7 +282,7 @@ static hza_error_t C41_CALL task_init
 static uint8_t mod00_core[] =
 {
     /* 0x0000: */ '[', 'h', 'z', 'a', '0', '0', ']', 0x0A,
-    /* 0x0008: */ C32(0x110),                  // size (in bytes)
+    /* 0x0008: */ C32(0x130),                  // size (in bytes)
     /* 0x000C: */ C32(0x11223344),            // checksum
     /* 0x0010: */ C32(0),                     // name
     /* 0x0014: */ C32(0),                     // const128_count
@@ -290,8 +290,8 @@ static uint8_t mod00_core[] =
     /* 0x001C: */ C32(0),                     // const32_count
     /* 0x0020: */ C32(2),                     // proc_count
     /* 0x0024: */ C32(2),                     // data_block_count
-    /* 0x0028: */ C32(0),                     // target_count
-    /* 0x002C: */ C32(0x0F),                  // insn_count
+    /* 0x0028: */ C32(2),                     // target_count
+    /* 0x002C: */ C32(0x12),                  // insn_count
     /* 0x0030: */ C32(4),                     // data_size
     /* 0x0034: */ C32(0),                     // reserved0
     /* 0x0038: */ C32(0),                     // reserved1
@@ -314,8 +314,8 @@ static uint8_t mod00_core[] =
     /* 0x006C: */ C32(0),                     // name
 
     /* proc 02 - END */
-    /* 0x0070: */ C32(0x0F),                  // insn start
-    /* 0x0074: */ C32(0),                     // target start
+    /* 0x0070: */ C32(0x12),                  // insn start
+    /* 0x0074: */ C32(2),                     // target start
     /* 0x0078: */ C32(0),                     // const128_start
     /* 0x007C: */ C32(0),                     // const64_start
     /* 0x0080: */ C32(0),                     // const32_start
@@ -326,28 +326,33 @@ static uint8_t mod00_core[] =
     /* 0x0090: */ C32(4),                     // data block offset #2 - END
 
     /* target table - empty */
+    /* 0x0094: */ C32(0x10),
+    /* 0x0098: */ C32(0x01),
 
     /* insn table */
-    /* 0x0094: */ C16(HZAO_HALT), C16(0), C16(0), C16(0), // halt
-    /* 0x009C: */ C16(HZAO_INIT_16), C16(0x00), C16(0), C16('h'),
-    /* 0x00A4: */ C16(HZAO_INIT_16), C16(0x10), C16(0), C16('e'),
-    /* 0x00AC: */ C16(HZAO_INIT_16), C16(0x20), C16(0), C16('l'),
-    /* 0x00B4: */ C16(HZAO_INIT_16), C16(0x30), C16(0), C16('o'),
-    /* 0x00BC: */ C16(HZAO_INIT_16), C16(0x70), C16(0), C16('!'),
-    /* 0x00C4: */ C16(HZAO_INIT_16), C16(0x80), C16(0), C16(10),
-    /* 0x00CC: */ C16(HZAO_DEBUG_OUT_16), C16(0x00), C16(0), C16(0),
-    /* 0x00D4: */ C16(HZAO_DEBUG_OUT_16), C16(0x10), C16(0), C16(0),
-    /* 0x00DC: */ C16(HZAO_DEBUG_OUT_16), C16(0x20), C16(0), C16(0),
-    /* 0x00E4: */ C16(HZAO_DEBUG_OUT_16), C16(0x20), C16(0), C16(0),
-    /* 0x00EC: */ C16(HZAO_DEBUG_OUT_16), C16(0x30), C16(0), C16(0),
-    /* 0x00F4: */ C16(HZAO_DEBUG_OUT_16), C16(0x70), C16(0), C16(0),
-    /* 0x00F4: */ C16(HZAO_DEBUG_OUT_16), C16(0x80), C16(0), C16(0),
-    /* 0x0104: */ C16(HZAO_RET), C16(0), C16(0), C16(0),
+    /* 0x009C: */ C16(HZAO_HALT), C16(0), C16(0), C16(0), // halt
+    /* 0x00A4: */ C16(HZAO_INIT_8),  C16(0x90), C16(5),   C16(0),
+    /* 0x00AC: */ C16(HZAO_INIT_16), C16(0x00), C16('h'), C16(0),
+    /* 0x00B4: */ C16(HZAO_INIT_16), C16(0x10), C16('e'), C16(0),
+    /* 0x00BC: */ C16(HZAO_INIT_16), C16(0x20), C16('l'), C16(0),
+    /* 0x00C4: */ C16(HZAO_INIT_16), C16(0x30), C16('o'), C16(0),
+    /* 0x00CC: */ C16(HZAO_INIT_16), C16(0x70), C16('!'), C16(0),
+    /* 0x00D4: */ C16(HZAO_INIT_16), C16(0x80), C16(10),  C16(0),
+    /* 0x00DC: */ C16(HZAO_DEBUG_OUT_16), C16(0x00), C16(0), C16(0),
+    /* 0x00E4: */ C16(HZAO_DEBUG_OUT_16), C16(0x10), C16(0), C16(0),
+    /* 0x00EC: */ C16(HZAO_DEBUG_OUT_16), C16(0x20), C16(0), C16(0),
+    /* 0x00F4: */ C16(HZAO_DEBUG_OUT_16), C16(0x20), C16(0), C16(0),
+    /* 0x00FC: */ C16(HZAO_DEBUG_OUT_16), C16(0x30), C16(0), C16(0),
+    /* 0x0104: */ C16(HZAO_DEBUG_OUT_16), C16(0x70), C16(0), C16(0),
+    /* 0x010C: */ C16(HZAO_DEBUG_OUT_16), C16(0x80), C16(0), C16(0),
+    /* 0x0114: */ C16(HZAO_WRAP_ADD_CONST_8), C16(0x90), C16(0x90), C16(0xFF),
+    /* 0x011C: */ C16(HZAO_BRANCH_ZERO_8), C16(0x90), C16(0), C16(0),
+    /* 0x0124: */ C16(HZAO_RET), C16(0), C16(0), C16(0),
 
     /* data block #1 */
-    /* 0x010C: */ 'c', 'o', 'r', 'e',
+    /* 0x012C: */ 'c', 'o', 'r', 'e',
 
-    /* 0x0110: end */
+    /* 0x0130: end */
 };
 #undef C16
 #undef C32
@@ -1363,7 +1368,7 @@ static int32_t insn_check
     case HZAOC_RRC:
     case HZAOC_RRS:
     case HZAOC_RRW:
-    case HZAOC_RNC:
+    case HZAOC_RCN:
     case HZAOC_RNP:
     case HZAOC_RRP:
     case HZAOC_RCP:
@@ -1406,10 +1411,9 @@ static int32_t insn_check
     {
     case HZAOC_NNN:
     case HZAOC_RNN:
-    case HZAOC_RNC:
     case HZAOC_RNP:
         break;
-        
+
     case HZAOC_RRN:
     case HZAOC_RRR:
     case HZAOC_RRC:
@@ -1428,25 +1432,26 @@ static int32_t insn_check
         ps += b;
         if (rs < ps) rs = ps;
         break;
-        
+
     case HZAOC_RCP:
     case HZAOC_RCG:
+    case HZAOC_RCN:
         break;
-        
+
     case HZAOC_RLT:
         break;
-        
+
     case HZAOC_RAN:
     case HZAOC_RAA:
     case HZAOC_RA4:
     case HZAOC_RA5:
     case HZAOC_RA6:
         break;
-        
+
     default:
         return -1;
     }
-    
+
     /* check operand c */
     switch (oc)
     {
@@ -1456,52 +1461,52 @@ static int32_t insn_check
     case HZAOC_RAN:
     case HZAOC_SRN:
         break;
-        
+
     case HZAOC_RRR:
     case HZAOC_QRR:
         break;
-        
+
     case HZAOC_RRC:
-    case HZAOC_RNC:
+    case HZAOC_RCN:
     case HZAOC_QRC:
         break;
 
     case HZAOC_RRS:
     case HZAOC_QRS:
         break;
-        
+
     case HZAOC_RRW:
     case HZAOC_QRW:
         break;
-        
+
     case HZAOC_RNP:
     case HZAOC_RRP:
     case HZAOC_RCP:
         c = insn->c;
         if (c + 1 >= target_count) return -1;
         break;
-        
+
     case HZAOC_RRG:
     case HZAOC_RCG:
         c = insn->c;
         if (c + 2 >= target_count) return -1;
         break;
-        
+
     case HZAOC_RLT:
         break;
-        
+
     case HZAOC_RAA:
         break;
-        
+
     case HZAOC_RA4:
         break;
-        
+
     case HZAOC_RA5:
         break;
-        
+
     case HZAOC_RA6:
         break;
-        
+
     default:
         return -1;
     }
@@ -1773,9 +1778,13 @@ HAZNA_API hza_error_t C41_CALL hza_run
     uint8_t * r;
     uint32_t fx, reg_base;
     uint_t iter_count;
+    uint_t target_index;
 
-#define UPDATE_ITER_COUNT() iter_count += li - i
-#define RU16(_bit_ofs) (*(uint16_t *) (r + ((_bit_ofs) >> 3)))
+#define UPDATE_ITER_COUNT() (iter_count += i - li)
+#define CHECK_ITER_COUNT() if (UPDATE_ITER_COUNT() >= iter_limit) goto l_done
+#define VU8(_bit_ofs) (*(uint8_t *) (r + ((_bit_ofs) >> 3)))
+#define VU16(_bit_ofs) (*(uint16_t *) (r + ((_bit_ofs) >> 3)))
+
     t = hc->active_task;
     DEBUG_CHECK(t);
 
@@ -1813,17 +1822,32 @@ HAZNA_API hza_error_t C41_CALL hza_run
             r = t->reg_space + reg_base;
             if (iter_count >= iter_limit) goto l_done;
             break;
+        case HZAO_INIT_8:
+            VU8(i->a) = i->b;
+            break;
         case HZAO_INIT_16:
-            RU16(i->a) = i->c;
+            VU16(i->a) = i->b;
             break;
         case HZAO_DEBUG_OUT_16:
-            D("DEBUG_OUT: $c", RU16(i->a));
+            D("DEBUG_OUT: $c", VU16(i->a));
             if (w->log_level == HZA_LL_INFO && w->log_io)
             {
-                c41_io_fmt(w->log_io, "$c", RU16(i->a));
+                c41_io_fmt(w->log_io, "$c", VU16(i->a));
             }
             break;
+        case HZAO_WRAP_ADD_CONST_8:
+            VU8(i->a) = VU8(i->b) + i->c;
+            D("wrap add: $Xb", VU8(i->a));
+            break;
         case HZAO_BRANCH_ZERO_8:
+            // D("tgt_idx");
+            // UPDATE_ITER_COUNT();
+            // D("iter_count: $Xi", iter_count);
+            if (iter_count >= iter_limit) goto l_done;
+            CHECK_ITER_COUNT();
+            target_index = i->c + (VU8(i->a) ? 1 : 0);
+            D("tgt_idx: $i => $Xd", target_index, p->target_table[target_index]);
+            i = p->insn_table + p->target_table[target_index];
             break;
         default:
             F("opcode $s ($Xw) is not implemented!",

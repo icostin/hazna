@@ -78,7 +78,7 @@ enum hza_operand_types
 #define HZAOC_QRS 0x09 /* shift */
 #define HZAOC_RRW 0x0A /* shift */
 #define HZAOC_QRW 0x0B /* shift */
-#define HZAOC_RNC 0x0C /* init with const */
+#define HZAOC_RCN 0x0C /* init with const */
 #define HZAOC_RNP 0x0D /* jump if reg is zero/non-zero */
 #define HZAOC_RRP 0x0E /* cmp reg, reg and jump */
 #define HZAOC_RCP 0x0F /* cmp reg, const and jump */
@@ -132,10 +132,11 @@ enum hza_operand_types
 #define HZAO_DEBUG_OUT_32       HZA_OPCODE1(HZAOC_RNN, HZAS_32, 0x000)
 
 /* rnc */
-#define HZAO_INIT_16            HZA_OPCODE1(HZAOC_RNC, HZAS_16, 0x000)
+#define HZAO_INIT_8             HZA_OPCODE1(HZAOC_RCN, HZAS_8, 0x000)
+#define HZAO_INIT_16            HZA_OPCODE1(HZAOC_RCN, HZAS_16, 0x000)
 
 /* rrc */
-#define HZAO_WRAP_ADD_8         HZA_OPCODE1(HZAOC_RRC, HZAS_8, 0x0000)
+#define HZAO_WRAP_ADD_CONST_8   HZA_OPCODE1(HZAOC_RRC, HZAS_8, 0x0000)
 
 /* rnp */
 #define HZAO_BRANCH_ZERO_1      HZA_OPCODE1(HZAOC_RNP, HZAS_8, 0x000)
