@@ -146,8 +146,9 @@ static hza_error_t C41_CALL safe_free
  */
 static int32_t insn_check
 (
-    hza_insn_t * insn,
-    uint32_t task_alloc
+    hza_context_t * hc,
+    hza_proc_t * proc,
+    hza_insn_t * insn
 );
 
 /* last_insn_check **********************************************************/
@@ -1286,7 +1287,7 @@ static hza_error_t mod00_load
         for (j = 0; j < proc->insn_count; ++j)
         {
             int32_t rl;
-            rl = insn_check(proc->insn_table + j, proc->target_count);
+            rl = insn_check(hc, proc, proc->insn_table + j);
             D("check P$.4Hd.I$.4Hd: $s ($Xw) $Xw $Xw $Xw => reg_size = $.1Xd",
               i, j, hza_opcode_name(proc->insn_table[j].opcode),
               proc->insn_table[j].opcode,
@@ -1346,8 +1347,9 @@ l_corrupted:
 /* insn_check ***************************************************************/
 static int32_t insn_check
 (
-    hza_insn_t * insn,
-    uint32_t target_count
+    hza_context_t * hc,
+    hza_proc_t * proc,
+    hza_insn_t * insn
 )
 {
     uint32_t a, b, c, ps, rs;
@@ -1367,7 +1369,7 @@ static int32_t insn_check
     case HZAOC_RRR:
     case HZAOC_RRC:
     case HZAOC_RRS:
-    case HZAOC_RRW:
+    case HZAOC_RR4:
     case HZAOC_RCN:
     case HZAOC_RNP:
     case HZAOC_RRP:
@@ -1380,28 +1382,29 @@ static int32_t insn_check
     case HZAOC_RA4:
     case HZAOC_RA5:
     case HZAOC_RA6:
-        a = insn->a;
         ps = 1 << HZA_OPCODE_PRI_SIZE(insn->opcode);
-        if ((a & (ps - 1)) != 0) return -1; // unaligned reg
+    l_check_a_reg:
+        a = insn->a;
+        if ((a & (ps - 1)) != 0)
+        {
+            E("I$.4Hd: unaligned reg (a = $Xw)",
+              insn - proc->insn_table, insn->a);
+            return -1; // unaligned reg
+        }
         rs = a + ps;
         break;
 
     case HZAOC_QRR:
     case HZAOC_QRC:
     case HZAOC_QRS:
-    case HZAOC_QRW:
-        a = insn->a;
+    case HZAOC_QR4:
         ps = 2 << HZA_OPCODE_PRI_SIZE(insn->opcode);
-        if ((a & (ps - 1)) != 0) return -1; // unaligned reg
-        rs = a + ps;
-        break;
+        goto l_check_a_reg;
 
     case HZAOC_SRN:
-        a = insn->a;
         ps = 1 << HZA_OPCODE_SEC_SIZE(insn->opcode);
-        if ((a & (ps - 1)) != 0) return -1; // unaligned reg
-        rs = a + ps;
-        break;
+        goto l_check_a_reg;
+
     default:
         return -1;
     }
@@ -1412,23 +1415,30 @@ static int32_t insn_check
     case HZAOC_NNN:
     case HZAOC_RNN:
     case HZAOC_RNP:
+    case HZAOC_RLT: // this will be checked at arg c
         break;
 
     case HZAOC_RRN:
     case HZAOC_RRR:
     case HZAOC_RRC:
     case HZAOC_RRS:
-    case HZAOC_RRW:
+    case HZAOC_RR4:
     case HZAOC_RRP:
     case HZAOC_RRG:
     case HZAOC_QRR:
     case HZAOC_QRC:
     case HZAOC_QRS:
-    case HZAOC_QRW:
+    case HZAOC_QR4:
     case HZAOC_SRN:
+        ps = 1 << HZA_OPCODE_PRI_SIZE(insn->opcode);
+    l_check_b_reg:
         b = insn->b;
-        ps = 2 << HZA_OPCODE_PRI_SIZE(insn->opcode);
-        if ((b & (ps - 1)) != 0) return -1; // unaligned reg
+        if ((b & (ps - 1)) != 0)
+        {
+            E("I$.4Hd: unaligned reg (b = $Xw)",
+              insn - proc->insn_table, insn->b);
+            return -1; // unaligned reg
+        }
         ps += b;
         if (rs < ps) rs = ps;
         break;
@@ -1436,9 +1446,36 @@ static int32_t insn_check
     case HZAOC_RCP:
     case HZAOC_RCG:
     case HZAOC_RCN:
-        break;
-
-    case HZAOC_RLT:
+        ps = HZA_OPCODE_PRI_SIZE(insn->opcode);
+        switch (ps)
+        {
+        case 0: case 1: case 2: case 3: case 4:
+            break;
+        case 5:
+            if (insn->b >= proc->const32_count)
+            {
+                E("I$.4Hd: bad 32-bit const index (b = $Xw)",
+                  insn - proc->insn_table, insn->b);
+                return -1;
+            }
+            break;
+        case 6:
+            if (insn->b >= proc->const64_count)
+            {
+                E("I$.4Hd: bad 64-bit const index (b = $Xw)",
+                  insn - proc->insn_table, insn->b);
+                return -1;
+            }
+            break;
+        case 7:
+            if (insn->b >= proc->const128_count)
+            {
+                E("I$.4Hd: bad 128-bit const index (b = $Xw)",
+                  insn - proc->insn_table, insn->b);
+                return -1;
+            }
+            break;
+        }
         break;
 
     case HZAOC_RAN:
@@ -1446,7 +1483,8 @@ static int32_t insn_check
     case HZAOC_RA4:
     case HZAOC_RA5:
     case HZAOC_RA6:
-        break;
+        ps = 6; // addresses are 2^6 bits
+        goto l_check_b_reg;
 
     default:
         return -1;
@@ -1460,52 +1498,102 @@ static int32_t insn_check
     case HZAOC_RRN:
     case HZAOC_RAN:
     case HZAOC_SRN:
+    case HZAOC_RCN:
+    case HZAOC_RR4:
+    case HZAOC_QR4:
+    case HZAOC_RA4:
         break;
 
     case HZAOC_RRR:
     case HZAOC_QRR:
+        ps = 1 << HZA_OPCODE_PRI_SIZE(insn->opcode);
+    l_check_c_reg:
+        c = insn->c;
+        if ((c & (ps - 1)) != 0)
+        {
+            E("I$.4Hd: unaligned reg (c = $Xw)",
+              insn - proc->insn_table, insn->c);
+            return -1; // unaligned reg
+        }
+        ps += c;
+        if (rs < ps) rs = ps;
+        break;
         break;
 
     case HZAOC_RRC:
-    case HZAOC_RCN:
     case HZAOC_QRC:
+        ps = HZA_OPCODE_PRI_SIZE(insn->opcode);
+        switch (ps)
+        {
+        case 0: case 1: case 2: case 3: case 4:
+            break;
+        case 5:
+        l_check_c5:
+            if (insn->c >= proc->const32_count)
+            {
+                E("I$.4Hd: bad 32-bit const index (c = $Xw)",
+                  insn - proc->insn_table, insn->c);
+                return -1;
+            }
+            break;
+        case 6:
+        l_check_c6:
+            if (insn->c >= proc->const64_count)
+            {
+                E("I$.4Hd: bad 64-bit const index (c = $Xw)",
+                  insn - proc->insn_table, insn->c);
+                return -1;
+            }
+            break;
+        case 7:
+            if (insn->c >= proc->const128_count)
+            {
+                E("I$.4Hd: bad 128-bit const index (c = $Xw)",
+                  insn - proc->insn_table, insn->c);
+                return -1;
+            }
+            break;
+        }
         break;
 
     case HZAOC_RRS:
     case HZAOC_QRS:
-        break;
-
-    case HZAOC_RRW:
-    case HZAOC_QRW:
-        break;
+        ps = 1 << HZA_OPCODE_SEC_SIZE(insn->opcode);
+        goto l_check_c_reg;
 
     case HZAOC_RNP:
     case HZAOC_RRP:
     case HZAOC_RCP:
         c = insn->c;
-        if (c + 1 >= target_count) return -1;
+        if (c + 1 >= proc->target_count) return -1;
         break;
 
     case HZAOC_RRG:
     case HZAOC_RCG:
         c = insn->c;
-        if (c + 2 >= target_count) return -1;
+        if (c + 2 >= proc->target_count) return -1;
         break;
 
     case HZAOC_RLT:
+        b = insn->b;
+        c = insn->c;
+        if (b + c > proc->target_count)
+        {
+            E("I$.4d: bad target table ref (b = $Xw, c = $Xw)",
+              insn - proc->insn_table, b, c);
+            return -1;
+        }
         break;
 
     case HZAOC_RAA:
-        break;
-
-    case HZAOC_RA4:
-        break;
+        ps = 6;
+        goto l_check_c_reg;
 
     case HZAOC_RA5:
-        break;
+        goto l_check_c5;
 
     case HZAOC_RA6:
-        break;
+        goto l_check_c6;
 
     default:
         return -1;

@@ -76,8 +76,8 @@ enum hza_operand_types
 #define HZAOC_SRN 0x07 /* zero-extend, sign-extend */
 #define HZAOC_RRS 0x08 /* shift */
 #define HZAOC_QRS 0x09 /* shift */
-#define HZAOC_RRW 0x0A /* shift */
-#define HZAOC_QRW 0x0B /* shift */
+#define HZAOC_RR4 0x0A /* shift */
+#define HZAOC_QR4 0x0B /* shift */
 #define HZAOC_RCN 0x0C /* init with const */
 #define HZAOC_RNP 0x0D /* jump if reg is zero/non-zero */
 #define HZAOC_RRP 0x0E /* cmp reg, reg and jump */

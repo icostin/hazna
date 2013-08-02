@@ -49,7 +49,7 @@ uint8_t C41_CALL hmain (c41_cli_t * cli_p)
         c41_io_fmt(cli_p->stdout_p, 
  "Usage: hazna CMD [PARAMS]\n"
  "Commands:\n"
- "  version                     prints this tool's and engine's versions\n"
+ "  version                     prints versions for this tool and the engine\n"
  "  help                        prints this text\n"
  "  test                        runs some tests\n"
  );
