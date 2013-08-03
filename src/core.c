@@ -415,7 +415,17 @@ HAZNA_API char const * C41_CALL hza_opcode_name (uint16_t o)
         X(HZAO_RET);
         X(HZAO_DEBUG_OUT_16);
         X(HZAO_DEBUG_OUT_32);
+        X(HZAO_INIT_8);
         X(HZAO_INIT_16);
+        X(HZAO_WRAP_ADD_CONST_8);
+        X(HZAO_BRANCH_ZERO_1);
+        X(HZAO_BRANCH_ZERO_2);
+        X(HZAO_BRANCH_ZERO_4);
+        X(HZAO_BRANCH_ZERO_8);
+        X(HZAO_BRANCH_ZERO_16);
+        X(HZAO_BRANCH_ZERO_32);
+        X(HZAO_BRANCH_ZERO_64);
+        X(HZAO_BRANCH_ZERO_128);
     }
     return "HZAO_UNKNOWN";
 #undef X
@@ -1288,7 +1298,7 @@ static hza_error_t mod00_load
         {
             int32_t rl;
             rl = insn_check(hc, proc, proc->insn_table + j);
-            D("check P$.4Hd.I$.4Hd: $s ($Xw) $Xw $Xw $Xw => reg_size = $.1Xd",
+            D("check P$.4Hd.I$.4Hd: $s ($XUw) $XUw $XUw $XUw => reg_size = $.1Xd",
               i, j, hza_opcode_name(proc->insn_table[j].opcode),
               proc->insn_table[j].opcode,
               proc->insn_table[j].a,
@@ -1297,7 +1307,7 @@ static hza_error_t mod00_load
               rl);
             if (rl < 0)
             {
-                E("invalid insn $Xd: $s ($Xw) $Xw $Xw $Xw",
+                E("invalid insn $Xd: $s ($XUw) $XUw $XUw $XUw",
                   j, hza_opcode_name(proc->insn_table[j].opcode),
                   proc->insn_table[j].opcode,
                   proc->insn_table[j].a,
@@ -1310,7 +1320,7 @@ static hza_error_t mod00_load
         j--;
         if (last_insn_check(proc->insn_table + j))
         {
-            E("invalid last insn $Xd: $s ($Xw) $Xw $Xw $Xw",
+            E("invalid last insn $Xd: $s ($XUw) $XUw $XUw $XUw",
               j, hza_opcode_name(proc->insn_table[j].opcode),
               proc->insn_table[j].opcode,
               proc->insn_table[j].a,
@@ -1320,7 +1330,7 @@ static hza_error_t mod00_load
         }
 
         proc->reg_size = rlen >> 3;
-        D("proc $.3Xd reg_size:    $.5Xd bytes", i, rlen);
+        D("proc $.3Xd reg_size:    $.5Xd bytes", i, proc->reg_size);
     }
 #undef CHECK
 
@@ -1387,7 +1397,7 @@ static int32_t insn_check
         a = insn->a;
         if ((a & (ps - 1)) != 0)
         {
-            E("I$.4Hd: unaligned reg (a = $Xw)",
+            E("I$.4Hd: unaligned reg (a = $XUw)",
               insn - proc->insn_table, insn->a);
             return -1; // unaligned reg
         }
@@ -1435,7 +1445,7 @@ static int32_t insn_check
         b = insn->b;
         if ((b & (ps - 1)) != 0)
         {
-            E("I$.4Hd: unaligned reg (b = $Xw)",
+            E("I$.4Hd: unaligned reg (b = $XUw)",
               insn - proc->insn_table, insn->b);
             return -1; // unaligned reg
         }
@@ -1454,7 +1464,7 @@ static int32_t insn_check
         case 5:
             if (insn->b >= proc->const32_count)
             {
-                E("I$.4Hd: bad 32-bit const index (b = $Xw)",
+                E("I$.4Hd: bad 32-bit const index (b = $XUw)",
                   insn - proc->insn_table, insn->b);
                 return -1;
             }
@@ -1462,7 +1472,7 @@ static int32_t insn_check
         case 6:
             if (insn->b >= proc->const64_count)
             {
-                E("I$.4Hd: bad 64-bit const index (b = $Xw)",
+                E("I$.4Hd: bad 64-bit const index (b = $XUw)",
                   insn - proc->insn_table, insn->b);
                 return -1;
             }
@@ -1470,7 +1480,7 @@ static int32_t insn_check
         case 7:
             if (insn->b >= proc->const128_count)
             {
-                E("I$.4Hd: bad 128-bit const index (b = $Xw)",
+                E("I$.4Hd: bad 128-bit const index (b = $XUw)",
                   insn - proc->insn_table, insn->b);
                 return -1;
             }
@@ -1511,7 +1521,7 @@ static int32_t insn_check
         c = insn->c;
         if ((c & (ps - 1)) != 0)
         {
-            E("I$.4Hd: unaligned reg (c = $Xw)",
+            E("I$.4Hd: unaligned reg (c = $XUw)",
               insn - proc->insn_table, insn->c);
             return -1; // unaligned reg
         }
@@ -1531,7 +1541,7 @@ static int32_t insn_check
         l_check_c5:
             if (insn->c >= proc->const32_count)
             {
-                E("I$.4Hd: bad 32-bit const index (c = $Xw)",
+                E("I$.4Hd: bad 32-bit const index (c = $XUw)",
                   insn - proc->insn_table, insn->c);
                 return -1;
             }
@@ -1540,7 +1550,7 @@ static int32_t insn_check
         l_check_c6:
             if (insn->c >= proc->const64_count)
             {
-                E("I$.4Hd: bad 64-bit const index (c = $Xw)",
+                E("I$.4Hd: bad 64-bit const index (c = $XUw)",
                   insn - proc->insn_table, insn->c);
                 return -1;
             }
@@ -1548,7 +1558,7 @@ static int32_t insn_check
         case 7:
             if (insn->c >= proc->const128_count)
             {
-                E("I$.4Hd: bad 128-bit const index (c = $Xw)",
+                E("I$.4Hd: bad 128-bit const index (c = $XUw)",
                   insn - proc->insn_table, insn->c);
                 return -1;
             }
@@ -1579,7 +1589,7 @@ static int32_t insn_check
         c = insn->c;
         if (b + c > proc->target_count)
         {
-            E("I$.4d: bad target table ref (b = $Xw, c = $Xw)",
+            E("I$.4d: bad target table ref (b = $XUw, c = $XUw)",
               insn - proc->insn_table, b, c);
             return -1;
         }
@@ -1820,6 +1830,7 @@ HAZNA_API hza_error_t C41_CALL hza_enter
     hza_task_t * t = hc->active_task;
     hza_module_t * m;
     hza_proc_t * p;
+    hza_error_t e;
     uint_t fx;
     uint32_t reg_base, reg_limit;
 
@@ -1833,7 +1844,19 @@ HAZNA_API hza_error_t C41_CALL hza_enter
     if (fx == t->frame_limit)
     {
         // extend frame table
-        return hc->hza_error = HZAF_NO_CODE;
+        e = safe_realloc_table(hc, t->frame_table, sizeof(hza_frame_t),
+                               fx << 1, fx);
+        if (e)
+        {
+            E("failed reallocating frame table in task t$H.4d to $Ui items",
+              t->task_id, fx << 1);
+            t->frame_index -= 1;
+            return e;
+        }
+        t->frame_table = hc->args.realloc.ptr;
+        t->frame_limit = fx << 1;
+        D("reallocated frame table for t$.4Hd to $Ui items", t->task_id,
+          t->frame_limit);
     }
     t->frame_table[fx].proc = p;
     t->frame_table[fx].insn = p->insn_table;
@@ -1843,7 +1866,22 @@ HAZNA_API hza_error_t C41_CALL hza_enter
     if (reg_limit > t->reg_limit)
     {
         // extend reg space
-        return hc->hza_error = HZAF_NO_CODE;
+        uint_t new_reg_limit;
+        for (new_reg_limit = t->reg_limit; 
+             new_reg_limit < reg_limit; 
+             new_reg_limit <<= 1);
+        e = safe_realloc_table(hc, t->reg_space, 1, 
+                               new_reg_limit, t->reg_limit);
+        if (e)
+        {
+            E("failed reallocating reg space in task t$H.4d to $Ui bytes",
+              t->task_id, new_reg_limit);
+            return e;
+        }
+        t->reg_space = hc->args.realloc.ptr;
+        t->reg_limit = new_reg_limit;
+        D("reallocated reg space for t$.4Hd to $.1Xd bytes", t->task_id,
+          new_reg_limit);
     }
 
     return 0;
@@ -1888,7 +1926,7 @@ HAZNA_API hza_error_t C41_CALL hza_run
     (void) p;
     for (iter_count = 0;;)
     {
-        D("t$.4Hd M$.4Hd.P$.4Hd.I$.4Hd: $s ($Xw) $Xw $Xw $Xw",
+        D("t$.4Hd M$.4Hd.P$.4Hd.I$.4Hd: $s ($XUw) $XUw $XUw $XUw",
           t->task_id, f->module_index,
           p - t->module_table[f->module_index].module->proc_table,
           i - p->insn_table,
@@ -1938,7 +1976,7 @@ HAZNA_API hza_error_t C41_CALL hza_run
             i = p->insn_table + p->target_table[target_index];
             break;
         default:
-            F("opcode $s ($Xw) is not implemented!",
+            F("opcode $s ($XUw) is not implemented!",
               hza_opcode_name(i->opcode), i->opcode);
             return hc->hza_error = HZAF_NO_CODE;
         }
