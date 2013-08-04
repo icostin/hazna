@@ -23,6 +23,7 @@ enum hza_error_enum
     HZAE_ALLOC,
     HZAE_STATE,
     HZAE_STACK_LIMIT,
+    HZAE_REG_LIMIT,
     HZAE_PROC_INDEX,
     HZAE_MOD00_TRUNC,
     HZAE_MOD00_MAGIC,

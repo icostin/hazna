@@ -7,6 +7,9 @@
 #define INIT_FRAME_LIMIT        0x10
 #define INIT_MODMAP_LIMIT       8
 
+#define MAX_FRAME_LIMIT         0x10000
+#define MAX_REG_LIMIT           0x40000000
+
 /* macros *******************************************************************/
 #define L(_hc, _level, ...) \
     if ((_hc)->world->log_level >= (_level)) \
@@ -388,6 +391,7 @@ HAZNA_API char const * C41_CALL hza_error_name (hza_error_t e)
         X(HZAE_ALLOC);
         X(HZAE_STATE);
         X(HZAE_STACK_LIMIT);
+        X(HZAE_REG_LIMIT);
         X(HZAE_PROC_INDEX);
         X(HZAE_MOD00_TRUNC);
         X(HZAE_MOD00_MAGIC);
@@ -1840,33 +1844,21 @@ HAZNA_API hza_error_t C41_CALL hza_enter
     DEBUG_CHECK(proc_index < m->proc_count);
     p = &m->proc_table[proc_index];
     reg_base = t->frame_table[t->frame_index].reg_base + (reg_shift >> 3);
-    fx = t->frame_index += 1;
-    if (fx == t->frame_limit)
-    {
-        // extend frame table
-        e = safe_realloc_table(hc, t->frame_table, sizeof(hza_frame_t),
-                               fx << 1, fx);
-        if (e)
-        {
-            E("failed reallocating frame table in task t$H.4d to $Ui items",
-              t->task_id, fx << 1);
-            t->frame_index -= 1;
-            return e;
-        }
-        t->frame_table = hc->args.realloc.ptr;
-        t->frame_limit = fx << 1;
-        D("reallocated frame table for t$.4Hd to $Ui items", t->task_id,
-          t->frame_limit);
-    }
-    t->frame_table[fx].proc = p;
-    t->frame_table[fx].insn = p->insn_table;
-    t->frame_table[fx].module_index = module_index;
-    t->frame_table[fx].reg_base = reg_base;
+
     reg_limit = reg_base + p->reg_size;
+
     if (reg_limit > t->reg_limit)
     {
         // extend reg space
         uint_t new_reg_limit;
+
+        if (reg_limit > MAX_REG_LIMIT)
+        {
+            E("t$.4Hd reached its reg space limit! enter proc failed!",
+              t->task_id);
+            return (hc->hza_error = HZAE_REG_LIMIT);
+        }
+
         for (new_reg_limit = t->reg_limit; 
              new_reg_limit < reg_limit; 
              new_reg_limit <<= 1);
@@ -1883,6 +1875,37 @@ HAZNA_API hza_error_t C41_CALL hza_enter
         D("reallocated reg space for t$.4Hd to $.1Xd bytes", t->task_id,
           new_reg_limit);
     }
+
+    fx = t->frame_index + 1;
+    if (fx == t->frame_limit)
+    {
+        // extend frame table
+        if (fx > MAX_FRAME_LIMIT)
+        {
+            E("t$H.4d reached its limit of frames! enter proc failed!",
+              t->task_id);
+            return hc->hza_error = HZAE_STACK_LIMIT;
+        }
+
+        e = safe_realloc_table(hc, t->frame_table, sizeof(hza_frame_t),
+                               fx << 1, fx);
+        if (e)
+        {
+            E("failed reallocating frame table in task t$H.4d to $Ui items",
+              t->task_id, fx << 1);
+            return e;
+        }
+
+        t->frame_table = hc->args.realloc.ptr;
+        t->frame_limit = fx << 1;
+        D("reallocated frame table for t$.4Hd to $Ui items", t->task_id,
+          t->frame_limit);
+    }
+    t->frame_table[fx].proc = p;
+    t->frame_table[fx].insn = p->insn_table;
+    t->frame_table[fx].module_index = module_index;
+    t->frame_table[fx].reg_base = reg_base;
+    t->frame_index = fx;
 
     return 0;
 }
