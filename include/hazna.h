@@ -239,6 +239,9 @@ typedef struct hza_insn_s                       hza_insn_t;
 /* hza_mod00_hdr_t **********************************************************/
 typedef struct hza_mod00_hdr_s                  hza_mod00_hdr_t;
 
+/* hza_mod00_impmod_t *******************************************************/
+typedef struct hza_mod00_impmod_s               hza_mod00_impmod_t;
+
 /* hza_mod00_proc_t *********************************************************/
 typedef struct hza_mod00_proc_s                 hza_mod00_proc_t;
 
@@ -440,12 +443,12 @@ struct hza_mod00_hdr_s /* hza_mod00_hdr_t {{{1 */
     /* 0x1C */  uint32_t    const32_count;
     /* 0x20 */  uint32_t    proc_count;
     /* 0x24 */  uint32_t    data_block_count;
-    /* 0x28 */  uint32_t    target_count;
-    /* 0x2C */  uint32_t    insn_count;
-    /* 0x30 */  uint32_t    data_size;
-    /* 0x34 */  uint32_t    reserved0;
-    /* 0x38 */  uint32_t    reserved1;
-    /* 0x3C */  uint32_t    reserved2;
+    /* 0x28 */  uint32_t    import_module_count;
+    /* 0x2C */  uint32_t    import_count;
+    /* 0x30 */  uint32_t    export_count;
+    /* 0x34 */  uint32_t    target_count;
+    /* 0x38 */  uint32_t    insn_count;
+    /* 0x3C */  uint32_t    data_size;
     /* 0x40 - size of header */
 /*
  * mod00 format:
@@ -455,6 +458,9 @@ struct hza_mod00_hdr_s /* hza_mod00_hdr_t {{{1 */
  *  const32     const32_count * 4 bytes
  *  proc        (proc_count + 1) * sizeof(mod00_proc)
  *  data_block  (data_block_count + 1) * 4 bytes
+ *  imp_mod
+ *  imp_proc
+ *  export
  *  target      target_count * 4 bytes
  *  insn        insn_count * 8 bytes
  *  data        data_size bytes
@@ -470,6 +476,12 @@ struct hza_mod00_proc_s /* hza_mod00_proc_t {{{1 */
     uint32_t    const64_start;
     uint32_t    const32_start;
     uint32_t    name; // data block index
+};
+
+struct hza_mod00_impmod_s /* hza_mod00_impmod_t {{{1 */
+{
+    uint32_t    name;
+    uint32_t    proc_start; // start index in import proc area 
 };
 
 struct hza_mod_name_cell_s /* hza_mod_name_cell_t {{{1 */
@@ -491,6 +503,7 @@ struct hza_module_s /* hza_module_t {{{1 */
     uint32_t * const32_table;
     uint8_t * data;
     uint32_t * data_block_start_table; // [data_block_count + 1]
+    uint32_t * export_table; // table of proc indexes
     hza_context_t * owner;
 
     uint32_t const128_count;
@@ -501,8 +514,10 @@ struct hza_module_s /* hza_module_t {{{1 */
     uint32_t target_count;
     uint32_t data_block_count;
     uint32_t data_size;
+    uint32_t export_count;
 
     uint32_t module_id;
+    uint32_t module_count; // number of modules that import this module
     uint32_t task_count; // number of tasks that have imported this module
     uint32_t ctx_count; // number of contexts holding a pointer to this
     size_t size; // size in memory

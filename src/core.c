@@ -285,78 +285,93 @@ static hza_error_t C41_CALL task_init
 #define C16(_v) ((_v) >> 8), ((_v) & 0xFF)
 static uint8_t mod00_core[] =
 {
-    /* 0x0000: */ '[', 'h', 'z', 'a', '0', '0', ']', 0x0A,
-    /* 0x0008: */ C32(0x130),                  // size (in bytes)
-    /* 0x000C: */ C32(0x11223344),            // checksum
-    /* 0x0010: */ C32(0),                     // name
-    /* 0x0014: */ C32(0),                     // const128_count
-    /* 0x0018: */ C32(0),                     // const64_count
-    /* 0x001C: */ C32(0),                     // const32_count
-    /* 0x0020: */ C32(2),                     // proc_count
-    /* 0x0024: */ C32(2),                     // data_block_count
-    /* 0x0028: */ C32(2),                     // target_count
-    /* 0x002C: */ C32(0x12),                  // insn_count
-    /* 0x0030: */ C32(4),                     // data_size
-    /* 0x0034: */ C32(0),                     // reserved0
-    /* 0x0038: */ C32(0),                     // reserved1
-    /* 0x003C: */ C32(0),                     // reserved2
+    /* 0x0000: header */
+    '[', 'h', 'z', 'a', '0', '0', ']', 0x0A,
+    C32(0x146),                 // size (in bytes)
+    C32(0x11223344),            // checksum
+    C32(1),                     // name
+    C32(0),                     // const128_count
+    C32(0),                     // const64_count
+    C32(0),                     // const32_count
+    C32(2),                     // proc_count
+    C32(3),                     // data_block_count
+    C32(0),                     // import_module_count
+    C32(0),                     // import_count
+    C32(1),                     // export_count
+    C32(2),                     // target_count
+    C32(0x12),                  // insn_count
+    C32(0x0A),                  // data_size
 
-    /* proc 00 */
-    /* 0x0040: */ C32(0),                     // insn start
-    /* 0x0044: */ C32(0),                     // target start
-    /* 0x0048: */ C32(0),                     // const128_start
-    /* 0x004C: */ C32(0),                     // const64_start
-    /* 0x0050: */ C32(0),                     // const32_start
-    /* 0x0054: */ C32(0),                     // name
+    /* 0x0040: proc 00 */
+    C32(0),                     // insn start
+    C32(0),                     // target start
+    C32(0),                     // const128_start
+    C32(0),                     // const64_start
+    C32(0),                     // const32_start
+    C32(0),                     // name
 
-    /* proc 01 */
-    /* 0x0058: */ C32(1),                     // insn start
-    /* 0x005C: */ C32(0),                     // target start
-    /* 0x0060: */ C32(0),                     // const128_start
-    /* 0x0064: */ C32(0),                     // const64_start
-    /* 0x0068: */ C32(0),                     // const32_start
-    /* 0x006C: */ C32(0),                     // name
+    /* 0x0058: proc 01 */
+    C32(1),                     // insn start
+    C32(0),                     // target start
+    C32(0),                     // const128_start
+    C32(0),                     // const64_start
+    C32(0),                     // const32_start
+    C32(2),                     // name
 
-    /* proc 02 - END */
-    /* 0x0070: */ C32(0x12),                  // insn start
-    /* 0x0074: */ C32(2),                     // target start
-    /* 0x0078: */ C32(0),                     // const128_start
-    /* 0x007C: */ C32(0),                     // const64_start
-    /* 0x0080: */ C32(0),                     // const32_start
-    /* 0x0084: */ C32(0),                     // name
+    /* 0x0070: end of proc table (entry 02) */
+    C32(0x12),                  // insn start
+    C32(2),                     // target start
+    C32(0),                     // const128_start
+    C32(0),                     // const64_start
+    C32(0),                     // const32_start
+    C32(0),                     // name
 
-    /* 0x0088: */ C32(0),                     // data block offset #0
-    /* 0x008C: */ C32(0),                     // data block offset #1
-    /* 0x0090: */ C32(4),                     // data block offset #2 - END
+    /* 0x0088: data block table */
+    C32(0),                     // data block offset #0 - ''
+    C32(0),                     // data block offset #1 - 'core'
+    C32(0x04),                  // data block offset #2 - '_test0'
+    C32(0x0A),                  // data block offset #3 - END
 
-    /* target table - empty */
-    /* 0x0094: */ C32(0x10),
-    /* 0x0098: */ C32(0x01),
+    /* 0x0098: import modules */
+    C32(0),                     // END ENTRY: name
+    C32(0),                     // END ENTRY: proc_start
 
-    /* insn table */
-    /* 0x009C: */ C16(HZAO_HALT), C16(0), C16(0), C16(0), // halt
-    /* 0x00A4: */ C16(HZAO_INIT_8),  C16(0x90), C16(5),   C16(0),
-    /* 0x00AC: */ C16(HZAO_INIT_16), C16(0x00), C16('h'), C16(0),
-    /* 0x00B4: */ C16(HZAO_INIT_16), C16(0x10), C16('e'), C16(0),
-    /* 0x00BC: */ C16(HZAO_INIT_16), C16(0x20), C16('l'), C16(0),
-    /* 0x00C4: */ C16(HZAO_INIT_16), C16(0x30), C16('o'), C16(0),
-    /* 0x00CC: */ C16(HZAO_INIT_16), C16(0x70), C16('!'), C16(0),
-    /* 0x00D4: */ C16(HZAO_INIT_16), C16(0x80), C16(10),  C16(0),
-    /* 0x00DC: */ C16(HZAO_DEBUG_OUT_16), C16(0x00), C16(0), C16(0),
-    /* 0x00E4: */ C16(HZAO_DEBUG_OUT_16), C16(0x10), C16(0), C16(0),
-    /* 0x00EC: */ C16(HZAO_DEBUG_OUT_16), C16(0x20), C16(0), C16(0),
-    /* 0x00F4: */ C16(HZAO_DEBUG_OUT_16), C16(0x20), C16(0), C16(0),
-    /* 0x00FC: */ C16(HZAO_DEBUG_OUT_16), C16(0x30), C16(0), C16(0),
-    /* 0x0104: */ C16(HZAO_DEBUG_OUT_16), C16(0x70), C16(0), C16(0),
-    /* 0x010C: */ C16(HZAO_DEBUG_OUT_16), C16(0x80), C16(0), C16(0),
-    /* 0x0114: */ C16(HZAO_WRAP_ADD_CONST_8), C16(0x90), C16(0x90), C16(0xFF),
-    /* 0x011C: */ C16(HZAO_BRANCH_ZERO_8), C16(0x90), C16(0), C16(0),
-    /* 0x0124: */ C16(HZAO_RET), C16(0), C16(0), C16(0),
+    /* 0x00A0: import proc table - 0 items */
 
-    /* data block #1 */
-    /* 0x012C: */ 'c', 'o', 'r', 'e',
+    /* 0x00A0: export table */
+    C32(1),                     // proc 1 is exported
 
-    /* 0x0130: end */
+    /* 0x00A4: target table */
+    /* target table - proc 1 */
+    C32(0x10),
+    C32(0x01),
+
+    /* 0x00AC: insn table */
+    C16(HZAO_HALT), C16(0), C16(0), C16(0), // halt
+    C16(HZAO_INIT_8),  C16(0x90), C16(5),   C16(0),
+    C16(HZAO_INIT_16), C16(0x00), C16('h'), C16(0),
+    C16(HZAO_INIT_16), C16(0x10), C16('e'), C16(0),
+    C16(HZAO_INIT_16), C16(0x20), C16('l'), C16(0),
+    C16(HZAO_INIT_16), C16(0x30), C16('o'), C16(0),
+    C16(HZAO_INIT_16), C16(0x70), C16('!'), C16(0),
+    C16(HZAO_INIT_16), C16(0x80), C16(10),  C16(0),
+    C16(HZAO_DEBUG_OUT_16), C16(0x00), C16(0), C16(0),
+    C16(HZAO_DEBUG_OUT_16), C16(0x10), C16(0), C16(0),
+    C16(HZAO_DEBUG_OUT_16), C16(0x20), C16(0), C16(0),
+    C16(HZAO_DEBUG_OUT_16), C16(0x20), C16(0), C16(0),
+    C16(HZAO_DEBUG_OUT_16), C16(0x30), C16(0), C16(0),
+    C16(HZAO_DEBUG_OUT_16), C16(0x70), C16(0), C16(0),
+    C16(HZAO_DEBUG_OUT_16), C16(0x80), C16(0), C16(0),
+    C16(HZAO_WRAP_ADD_CONST_8), C16(0x90), C16(0x90), C16(0xFF),
+    C16(HZAO_BRANCH_ZERO_8), C16(0x90), C16(0), C16(0),
+    C16(HZAO_RET), C16(0), C16(0), C16(0),
+
+    /* 0x013C: data area */
+    /* data ofs 0x00: */ 'c', 'o', 'r', 'e',
+    /* data ofs 0x04: */ '_', 't', 'e', 's', 't', '0',
+    /* data size: 0x0A */
+
+    /* 0x0146: end */
 };
 #undef C16
 #undef C32
@@ -1073,6 +1088,8 @@ static hza_error_t mod00_load
 {
     hza_mod00_hdr_t lhdr;
     hza_mod00_proc_t * pt;
+    hza_mod00_impmod_t * im;
+    uint32_t * ip; // pointer to import proc names
     hza_module_t * m;
     hza_world_t * w = hc->world;
     uint8_t * p;
@@ -1105,6 +1122,9 @@ static hza_error_t mod00_load
     D("const32 count:           $Xd", lhdr.const32_count);
     D("proc count:              $Xd", lhdr.proc_count);
     D("data block count:        $Xd", lhdr.data_block_count);
+    D("import module count:     $Xd", lhdr.import_module_count);
+    D("import proc count:       $Xd", lhdr.import_count);
+    D("export proc count:       $Xd", lhdr.export_count);
     D("target count:            $Xd", lhdr.target_count);
     D("insn count:              $Xd", lhdr.insn_count);
     D("data size:               $Xd", lhdr.data_size);
@@ -1139,6 +1159,18 @@ static hza_error_t mod00_load
     D("data block offset:       $Xd", n);
     CHECK(lhdr.data_block_count < ((len - n) >> 2));
     n += (lhdr.data_block_count + 1) << 2;
+
+    D("import module offset:    $Xd", n);
+    CHECK(lhdr.import_module_count < ((len - n) / sizeof(hza_mod00_impmod_t)));
+    n += (lhdr.import_module_count + 1) * sizeof(hza_mod00_impmod_t);
+
+    D("import proc offset:      $Xd", n);
+    CHECK(lhdr.import_count <= ((len - n) >> 2));
+    n += lhdr.import_count << 2;
+
+    D("export proc offset:      $Xd", n);
+    CHECK(lhdr.export_count <= ((len - n) >> 2));
+    n += lhdr.export_count << 2;
 
     D("target offset:           $Xd", n);
     CHECK(lhdr.target_count < ((len - n) >> 2));
@@ -1191,8 +1223,14 @@ static hza_error_t mod00_load
     m->data_block_start_table = (void *) (pt + lhdr.proc_count + 1);
     m->data_block_count = lhdr.data_block_count;
 
-    m->target_table =
-        (void *) (m->data_block_start_table + lhdr.data_block_count + 1);
+    im = (void *) (m->data_block_start_table + lhdr.data_block_count + 1);
+    ip = (void *) (im + lhdr.import_module_count + 1);
+
+    m->export_table = (void *) (ip + lhdr.import_count);
+    m->export_count = lhdr.export_count;
+
+    m->target_table = (void *) (m->export_table + lhdr.export_count);
+    m->target_count = lhdr.target_count;
 
     m->insn_table = (void *) (m->target_table + m->target_count);
     m->insn_count = lhdr.insn_count;
@@ -1219,6 +1257,9 @@ static hza_error_t mod00_load
     n = lhdr.const32_count
         + (lhdr.proc_count + 1) * (sizeof(hza_mod00_proc_t) / 4)
         + lhdr.data_block_count + 1
+        + (lhdr.import_module_count + 1) * (sizeof(hza_mod00_impmod_t) / 4)
+        + lhdr.import_count
+        + lhdr.export_count
         + lhdr.target_count;
 
     /* deserialising 32-bit ints */
@@ -1579,18 +1620,23 @@ static int32_t insn_check
     case HZAOC_RRP:
     case HZAOC_RCP:
         c = insn->c;
-        if (c + 1 >= proc->target_count) return -1;
-        break;
+        b = 2;
+        goto l_check_tgt;
+        // if (c + 1 >= proc->target_count) return -1;
+        // break;
 
     case HZAOC_RRG:
     case HZAOC_RCG:
         c = insn->c;
-        if (c + 2 >= proc->target_count) return -1;
-        break;
+        b = 3;
+        goto l_check_tgt;
+        // if (c + 2 >= proc->target_count) return -1;
+        // break;
 
     case HZAOC_RLT:
         b = insn->b;
         c = insn->c;
+    l_check_tgt:
         if (b + c > proc->target_count)
         {
             E("I$.4d: bad target table ref (b = $XUw, c = $XUw)",
@@ -1859,10 +1905,10 @@ HAZNA_API hza_error_t C41_CALL hza_enter
             return (hc->hza_error = HZAE_REG_LIMIT);
         }
 
-        for (new_reg_limit = t->reg_limit; 
-             new_reg_limit < reg_limit; 
+        for (new_reg_limit = t->reg_limit;
+             new_reg_limit < reg_limit;
              new_reg_limit <<= 1);
-        e = safe_realloc_table(hc, t->reg_space, 1, 
+        e = safe_realloc_table(hc, t->reg_space, 1,
                                new_reg_limit, t->reg_limit);
         if (e)
         {
@@ -1997,7 +2043,7 @@ HAZNA_API hza_error_t C41_CALL hza_run
             target_index = i->c + (VU8(i->a) ? 1 : 0);
             D("tgt_idx: $i => $Xd", target_index, p->target_table[target_index]);
             i = p->insn_table + p->target_table[target_index];
-            break;
+            continue;
         default:
             F("opcode $s ($XUw) is not implemented!",
               hza_opcode_name(i->opcode), i->opcode);
