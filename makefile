@@ -31,7 +31,7 @@ endif
 all: engines clitools
 
 arc:
-	cd .. && tar -Jcvf $(N).txz $(N)/src $(N)/include $(N)/make* $(N)/README* $(N)/LICENCE
+	cd .. && tar -Jcvf $(N).txz $(N)/src $(N)/include $(N)/make* $(N)/README* $(N)/LICENCE $(N)/*.cmd
 
 install: engine-dl-rls cli-dl
 	mkdir -p $(PREFIX_DIR)/bin

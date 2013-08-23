@@ -221,7 +221,7 @@ static hza_error_t C41_CALL detach_context
 );
 
 /* mod_name_cmp *************************************************************/
-static uint_t mod_name_cmp
+static uint_t C41_CALL mod_name_cmp
 (
     void * key,
     void * node_payload,
@@ -735,7 +735,7 @@ HAZNA_API hza_error_t C41_CALL hza_init
 }
 
 /* detach_context ***********************************************************/
-static hza_error_t detach_context
+static hza_error_t C41_CALL detach_context
 (
     hza_context_t * hc
 )
