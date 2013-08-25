@@ -1094,7 +1094,7 @@ static hza_error_t mod00_load
     hza_world_t * w = hc->world;
     uint8_t * p;
     hza_error_t e;
-    uint32_t n, i, j;
+    uint32_t n, i, j, dblen;
     size_t z;
 
     D("len = $Xz", len);
@@ -1303,14 +1303,16 @@ static hza_error_t mod00_load
     CHECK(lhdr.data_block_count >= 1);
     CHECK(m->data_block_start_table[0] == 0);
     CHECK(m->data_block_start_table[1] == 0);
-    for (i = 1; i < m->data_block_count; ++i)
+    /* blocks should be increasing in size */
+    for (dblen = 1, i = 1; i < m->data_block_count; ++i)
     {
-        CHECK(m->data_block_start_table[i]
-              < m->data_block_start_table[i + 1]);
+        CHECK(m->data_block_start_table[i] + dblen
+              <= m->data_block_start_table[i + 1]);
+        dblen = m->data_block_start_table[i + 1] - m->data_block_start_table[i];
     }
     CHECK(m->data_block_start_table[i] == lhdr.data_size);
 
-    /* todo: check proc targets & insns */
+    /* check proc targets & insns */
     for (i = 0; i < lhdr.proc_count; ++i)
     {
         uint32_t rlen = 0;
@@ -1376,6 +1378,18 @@ static hza_error_t mod00_load
 
         proc->reg_size = rlen >> 3;
         D("proc $.3Xd reg_size:    $.5Xd bytes", i, proc->reg_size);
+    }
+
+    /* check data blocks to be sorted (we checked already that they are
+     * increasing in size, now we check that consecutive blocks of same length
+     * are lexicographically increasing) */
+    for (dblen = 0, i = 1; i < m->data_block_count; ++i)
+    {
+        uint32_t l = m->data_block_start_table[i + 1] 
+            - m->data_block_start_table[i];
+        if (dblen != l) { dblen = l; continue; }
+        CHECK(C41_MEM_COMPARE(m->data + m->data_block_start_table[i - 1],
+                              m->data + m->data_block_start_table[i], l) < 0);
     }
 #undef CHECK
 
