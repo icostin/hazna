@@ -677,6 +677,14 @@ HAZNA_API hza_error_t C41_CALL hza_init
         w->core_module = hc->args.realloc.ptr;
         mnc->module = hc->args.realloc.ptr;
 
+#if 0
+        if (hza_export_by_name(w->core_module, (uint8_t *) "_test0", 6) != 1)
+        {
+            E("export lookup failed!");
+            break;
+        }
+#endif
+
         smte = c41_smt_cond_create(&hc->cond, smt, &w->mac.ma);
         if (smte)
         {
@@ -1312,6 +1320,24 @@ static hza_error_t mod00_load
     }
     CHECK(m->data_block_start_table[i] == lhdr.data_size);
 
+    /* TODO: check import modules */
+    /* TODO: check import procs */
+
+    /* check exports */
+    if (lhdr.export_count)
+    {
+        uint32_t dbi;
+        for (dbi = i = 0; i < lhdr.export_count; ++i)
+        {
+            CHECK(m->export_table[i] < lhdr.proc_count);
+            D("exp[0]: $Xd", m->export_table[i]);
+            D("proc[$Xd].name: $Xd", m->export_table[i], 
+              pt[m->export_table[i]].name);
+            CHECK(dbi < pt[m->export_table[i]].name);
+            dbi = pt[m->export_table[i]].name;
+        }
+    }
+
     /* check proc targets & insns */
     for (i = 0; i < lhdr.proc_count; ++i)
     {
@@ -1332,6 +1358,8 @@ static hza_error_t mod00_load
 
         proc->target_table = m->target_table + pt[i].target_start;
         proc->target_count = pt[i + 1].target_start - pt[i].target_start;
+
+        proc->name = pt[i].name;
 
         /* validate all targets from all target blocks that belong to
          * current proc */
@@ -1701,6 +1729,38 @@ static int last_insn_check
         return 0;
     }
     return 1;
+}
+
+/* hza_export_by_name *******************************************************/
+HAZNA_API int32_t C41_CALL hza_export_by_name
+(
+    hza_module_t * m,
+    uint8_t const * name,
+    size_t name_len
+)
+{
+    int32_t a, b, c;
+    uint32_t clen;
+    uint32_t n, pi;
+    int cmp;
+    for (a = 0, b = m->export_count - 1; a <= b; )
+    {
+        c = (a + b) >> 1;
+        n = m->proc_table[pi = m->export_table[c]].name;
+        clen = m->data_block_start_table[n + 1] 
+            - m->data_block_start_table[n];
+        if (name_len == clen)
+        {
+            cmp = c41_u8a_compare(name, 
+                                  m->data + m->data_block_start_table[n],
+                                  name_len);
+            if (!cmp) return pi;
+        }
+        else cmp = name_len < clen ? -1 : +1;
+        if (cmp < 0) b = c - 1;
+        else a = c + 1;
+    }
+    return -1;
 }
 
 /* task_alloc ***************************************************************/

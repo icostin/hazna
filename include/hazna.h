@@ -535,6 +535,7 @@ struct hza_proc_s /* hza_proc_t {{{1 */
     uint32_t const64_count;
     uint32_t const32_count;
     uint32_t target_count;
+    uint32_t name;
     uint16_t reg_size; // size of proc's register space (in bytes)
 };
 
@@ -681,6 +682,18 @@ HAZNA_API hza_error_t C41_CALL hza_module_load
 HAZNA_API hza_error_t C41_CALL hza_module_map_name
 (
     hza_context_t * hc,
+    hza_module_t * m,
+    uint8_t const * name,
+    size_t name_len
+);
+
+/* hza_export_by_name ************************************************ {{{1 */
+/**
+ * Searches the exports of a module for the given name.
+ * Returns: -1 if name not found, >= 0 the index of the proc found.
+ */
+HAZNA_API int32_t C41_CALL hza_export_by_name
+(
     hza_module_t * m,
     uint8_t const * name,
     size_t name_len
