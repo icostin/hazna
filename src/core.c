@@ -1441,6 +1441,22 @@ l_corrupted:
     return hc->hza_error = HZAE_MOD00_CORRUPT;
 }
 
+/* hza_module_load **********************************************************/
+HAZNA_API hza_error_t C41_CALL hza_module_load
+(
+    hza_context_t * hc,
+    uint8_t const * data,
+    size_t size,
+    hza_module_t * * mp
+)
+{
+    (void) hc;
+    (void) data;
+    (void) size;
+    *mp = NULL;
+    return hc->hza_error = HZAF_NO_CODE;
+}
+
 /* insn_check ***************************************************************/
 static int32_t insn_check
 (

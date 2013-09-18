@@ -113,15 +113,20 @@ uint8_t C41_CALL hmain (c41_cli_t * cli_p)
 uint8_t bsp (c41_cli_t * cli_p, uint8_t const * module_path_utf8)
 {
     bsp_ctx_t ctx;
+    hza_context_t hcd;
     ssize_t z;
     uint8_t rc;
     uint_t fsie;
     uint_t mae;
+    hza_error_t hzae;
+    hza_task_t * task;
+    hza_module_t * module;
     uint8_t * module_data;
     size_t module_size;
     c41_io_t * in = cli_p->stdin_p;
     c41_io_t * out = cli_p->stdout_p;
     c41_io_t * log = cli_p->stderr_p;
+    char inited;
 
     C41_VAR_ZERO(ctx);
 
@@ -129,6 +134,7 @@ uint8_t bsp (c41_cli_t * cli_p, uint8_t const * module_path_utf8)
     (void) out;
 
     module_data = NULL;
+    task = NULL;
     rc = EC_NONE;
     do
     {
@@ -146,8 +152,42 @@ uint8_t bsp (c41_cli_t * cli_p, uint8_t const * module_path_utf8)
             break;
         }
 
+        hzae = hza_init(&hcd, cli_p->ma_p, cli_p->smt_p, log, HZA_LL_DEBUG);
+        if (hzae)
+        {
+            rc |= EC_INIT;
+            z = c41_io_fmt(log, "Error: failed to init hazna (code $Ui)\n",
+                           hzae);
+            if (z < 0) rc |= EC_LOG;
+            break;
+        }
+        inited = 1;
+
+        hzae = hza_task_create(&hcd, &task);
+        if (hzae)
+        {
+            rc |= EC_INIT;
+            break;
+        }
+
+        hzae = hza_module_load(&hcd, module_data, module_size, &module);
+        if (hzae)
+        {
+            rc |= EC_INIT;
+            z = c41_io_fmt(log, "Error: failed loading module (code $Ui: $s)\n",
+                           hzae, hza_error_name(hzae));
+            if (z < 0) rc |= EC_LOG;
+            break;
+        }
+
     }
     while (0);
+
+    if (inited)
+    {
+        hzae = hza_finish(&hcd);
+        if (hzae) rc |= EC_FINISH;
+    }
 
     if (module_data)
     {
